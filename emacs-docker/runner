@@ -1,0 +1,9 @@
+xhost + ; \
+docker run --name=ad-a\
+    -v /tmp/.X11-unix:/tmp/.X11-unix -v /dev/shm:/dev/shm \
+    -v=/dev/dri:/dev/dri:rw \
+    -v ${HOME}:/ex/ \
+    --net=host \
+    -e DISPLAY=${DISPLAY} -i -t  ad2
+
+
