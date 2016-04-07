@@ -1,3 +1,4 @@
+
 (defadvice comint-simple-send (around allow_clear_command activate)
   "If the input is the word \"clear\", erase buffer."
   (if (string-equal "clear" string)
@@ -9,8 +10,25 @@
     ad-do-it))
 
 
+ (defun alt-shell-dwim (arg)
+   "Run an inferior shell like `shell'. If an inferior shell as its I/O
+ through the current buffer, then pop the next buffer in `buffer-list'
+ whose name is generated from the string \"*shell*\". When called with
+ an argument, start a new inferior shell whose I/O will go to a buffer
+ named after the string \"*shell*\" using `generate-new-buffer-name'."
+   (interactive "P")
+   (let* ((shell-buffer-list
+ 	  (let (blist)
+	     (dolist (buff (buffer-list) blist)
+	       (when (string-match "^\\*shell\\*" (buffer-name buff))
+	 	(setq blist (cons buff blist))))))
+	  (name (if arg
+	 	   (generate-new-buffer-name "*shell*")
+	 	 (car shell-buffer-list))))
+     (shell name)))
+
 (global-set-key "\C-xg" 'goto-line)
-(global-set-key [f1] 'shell)
+(global-set-key [f1] 'alt-shell-dwim)
 (global-set-key [f2] 'compile)
 (global-set-key [f3] 'gdb)
 
@@ -21,10 +39,7 @@
    (if selective-display nil (or (+ (current-column) 1) 1))))
 
 (global-set-key [f4] 'toggle-selective-display-column)
-
-
-
-;; (set-default-font "lucidasanstypewriter-12")
+(global-set-key [f5] 'revert-buffer)
 (setq-default tab-width 2 indent-tabs-mode nil)
 (server-start)
 (setq c-indent-mode nil)
@@ -67,3 +82,52 @@ indent otherwise
  (add-hook 'font-lock-mode-hook 'try-to-add-imenu)
 
 (global-set-key [C-tab] 'other-window)
+
+;;  '(initial-buffer-choice "/home/gdiener/.bashrc")
+(custom-set-variables
+ ;; custom-set-variables was added by Custom.
+ ;; If you edit it by hand, you could mess it up, so be careful.
+ ;; Your init file should contain only one such instance.
+ ;; If there is more than one, they won't work right.
+ '(c-basic-offset 2)
+ '(c-offsets-alist (quote ((substatement-open . 0) (case-label . +))))
+ '(custom-safe-themes (quote ("388132d2660c2eb59ba12e9325998bdc3d0e246b2c5df431b1b57e8dca57f611" "e525bee43b813bbf51ecf4ce8594fc93f625aa86f239537819564cb82e8499cd" "f6dbbd5601809d772cfce9b8848b48eba1cf2350b1871aa971e20c313c4c9a51" "bcdfdbfed67dd99d6c17475b8dde3f8e575fb9741252c6ac18ed44f42d20eb52" default)))
+ '(inhibit-startup-screen t)
+ '(initial-buffer-choice (get-buffer-create "*shell*"))
+ '(large-file-warning-threshold nil)
+ '(make-backup-files nil)
+ '(mouse-wheel-progressive-speed nil)
+ '(package-archives (quote (("gnu" . "http://elpa.gnu.org/packages/") ("" . "http://marmalade-repo.org/packages"))))
+ '(perl-indent-level 2)
+ '(revert-without-query (quote (".*")))
+ '(scroll-conservatively 1)
+ '(scroll-preserve-screen-position t)
+ '(sh-basic-offset 2)
+ '(tags-revert-without-query t))
+(custom-set-faces
+ ;; custom-set-faces was added by Custom.
+ ;; If you edit it by hand, you could mess it up, so be careful.
+ ;; Your init file should contain only one such instance.
+ ;; If there is more than one, they won't work right.
+ )
+
+;;(package-initialize)
+;;(eide-start)
+;;(load-theme `manoj-dark t)
+;;(load-theme `dichromacy t)
+(load-theme `misterioso t)
+(setq explicit-shell-file-name "/bin/bash")
+(windmove-default-keybindings)
+(set-cursor-color "#ffffff")
+
+
+(global-set-key "%" 'match-paren)
+
+(defun match-paren (arg)
+  "Go to the matching paren if on a paren; otherwise insert %."
+  (interactive "p")
+  (cond ((looking-at "\\s\(") (forward-list 1) (backward-char 1))
+        ((looking-at "\\s\)") (forward-char 1) (backward-list 1))
+        (t (self-insert-command (or arg 1)))))
+
+
