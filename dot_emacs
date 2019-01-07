@@ -93,6 +93,7 @@ indent otherwise
  '(c-offsets-alist (quote ((substatement-open . 0) (case-label . +))))
  '(custom-safe-themes (quote ("388132d2660c2eb59ba12e9325998bdc3d0e246b2c5df431b1b57e8dca57f611" "e525bee43b813bbf51ecf4ce8594fc93f625aa86f239537819564cb82e8499cd" "f6dbbd5601809d772cfce9b8848b48eba1cf2350b1871aa971e20c313c4c9a51" "bcdfdbfed67dd99d6c17475b8dde3f8e575fb9741252c6ac18ed44f42d20eb52" default)))
  '(inhibit-startup-screen t)
+ '(inhibit-startup-message t)
  '(initial-buffer-choice (get-buffer-create "*shell*"))
  '(large-file-warning-threshold nil)
  '(make-backup-files nil)
@@ -115,7 +116,8 @@ indent otherwise
 ;;(eide-start)
 ;;(load-theme `manoj-dark t)
 ;;(load-theme `dichromacy t)
-(load-theme `misterioso t)
+;;(load-theme `misterioso t)
+(load-theme `leuven t)
 (setq explicit-shell-file-name "/bin/bash")
 (windmove-default-keybindings)
 (set-cursor-color "#ffffff")
@@ -131,3 +133,11 @@ indent otherwise
         (t (self-insert-command (or arg 1)))))
 
 
+(put 'scroll-left 'disabled nil)
+
+
+(require 'package)
+(add-to-list 'package-archives
+             '("melpa-stable" . "http://stable.melpa.org/packages/") t)
+
+(global-set-key (kbd "C-x z") 'magit-status)
