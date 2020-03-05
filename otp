@@ -1,0 +1,11 @@
+#!/usr/bin/env python
+import subprocess
+from getpass import getpass
+# The key must be in the password-protected 'code.zip'
+pwd = getpass('? ')
+# use pwd to decrypt  code.zip
+key = subprocess.check_output(
+    'unzip -P {} -p code.zip'.format(pwd), shell=True).replace(' ','')
+# use oathtool to get totp:
+print(subprocess.check_output('oathtool --totp -b {}'.format(key), shell=True))
+
