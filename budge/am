@@ -6,6 +6,7 @@ import os
 import pdb
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support.select import Select
 import time
 
 def wait_for(condition_function):
@@ -63,8 +64,8 @@ def load_emoney():
     driver = webdriver.Chrome('/usr/bin/chromedriver')
     end_time = time.time()
     start_time = end_time - (days * 24 * 60 * 60) # 30 days
-    start_date_range = date.fromtimestamp(start_time).strftime("%m/%d/%Y")
-    end_date_range = date.fromtimestamp(end_time).strftime("%m/%d/%Y")
+    start_date_range = date.fromtimestamp(start_time).strftime('%m/%d/%Y')
+    end_date_range = date.fromtimestamp(end_time).strftime('%m/%d/%Y')
     with wait_for_page_load(driver):
         driver.get(CONFIG['EM_URL'])
         username = driver.find_element_by_id('Username')
@@ -106,12 +107,60 @@ def load_amazon():
     driver = webdriver.Chrome('/usr/bin/chromedriver')
     end_time = time.time()
     start_time = end_time - (days * 24 * 60 * 60) # 30 days
-    start_date_range = date.fromtimestamp(start_time).strftime("%m/%d/%Y")
-    end_date_range = date.fromtimestamp(end_time).strftime("%m/%d/%Y")
+    start_date_range = date.fromtimestamp(start_time).strftime('%-m/%d/%Y')
+    start_month, start_day, start_year = start_date_range.split('/')
+    end_date_range = date.fromtimestamp(end_time).strftime('%-m/%d/%Y')
+    end_month, end_day, end_year = end_date_range.split('/')
+
     with wait_for_page_load(driver):
         driver.get(CONFIG['AM_URL'])
-    pdb.set_trace()
-    #driver.quit()
+        sign_in_securely_button = driver.find_element_by_id('a-autoid-0-announce')
+        sign_in_securely_button.click()
+        time.sleep(1)
+    with wait_for_page_load(driver):
+        email_input = driver.find_element_by_id('ap_email')
+        email_input.send_keys(CONFIG['AM_USERNAME'])
+        continue_button = driver.find_element_by_id('continue')
+        continue_button.click()
+        time.sleep(1)
+    with wait_for_page_load(driver):
+        password_input = driver.find_element_by_id('ap_password')
+        password_input.send_keys(CONFIG['AM_PWD'])
+        sign_in_button = driver.find_element_by_id('signInSubmit')
+        sign_in_button.click()
+        time.sleep(1)
+    with wait_for_page_load(driver):
+        account_list_link = driver.find_element_by_id('nav-link-accountList')
+        account_list_link.click()
+        time.sleep(1)
+    with wait_for_page_load(driver):
+        download_order_reports_link = driver.find_element_by_link_text('Download order reports')
+        download_order_reports_link.click()
+        time.sleep(1)
+    with wait_for_page_load(driver):
+        report_month_start = Select(driver.find_element_by_id('report-month-start'))
+        report_month_start.select_by_value('{}'.format(start_month))
+        report_day_start = Select(driver.find_element_by_id('report-day-start'))
+        report_day_start.select_by_value('{}'.format(start_day))  #'1' to '30' or whatever
+        report_year_start = Select(driver.find_element_by_id('report-year-start'))
+        report_year_start.select_by_value('{}'.format(start_year))  #'2020'  or whatever
+        report_month_end = Select(driver.find_element_by_id('report-month-end'))
+        report_month_end.select_by_value('{}'.format(end_month))  #'1' to '12'
+        report_day_end = Select(driver.find_element_by_id('report-day-end'))
+        report_day_end.select_by_value('{}'.format(end_day))  #'1' to '30' or whatever
+        report_year_end = Select(driver.find_element_by_id('report-year-end'))
+        report_year_end.select_by_value('{}'.format(end_year))  #'2020'  or whatever
+
+        # remove older report(s)
+        downloads_dir = os.path.expanduser('~/Downloads')
+        files = [file for file in os.listdir(downloads_dir)]
+        files = [file for file in files if file.endswith('.csv') and '_to_' in file]
+        [os.remove(os.path.join(downloads_dir, file)) for file in files]
+        # generate new report
+        report_confirm_button = driver.find_element_by_id('report-confirm')
+        report_confirm_button.click()
+        time.sleep(60)
+    driver.quit()
 
 
 # main starts here:
