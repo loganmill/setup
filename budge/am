@@ -10,6 +10,61 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.select import Select
 import time
 
+BUDGET = {
+  'Alcohol & Bars':50,
+  'Auto Service': 500,
+  'Books': 100,
+  'Business (consultants, accountants)': 28,
+  'Cash': 150,
+  'Charity':42,
+  'Clothing':200,
+  'Counseling':165,
+  'Dental': 470,
+  'Drugstore': 150,
+  'Electricity':217,
+  'Electronics & Software':138,
+  'Entertainment':148,
+  'Movies & Music': 160,
+  'Fast Food & Convenience':168,
+  'Federal Tax': 467,
+  'Gas & Fuel':133,
+  'Gifts':200,
+  'Groceries':1400,
+  'Hair & Nails':71,
+  'Home Improvement/Maintenance':879,
+  'Insurance': 262,
+  'Investment Savings': 0,
+  'Kids': 1500,
+  'Medical':581,
+  'Merchandise/Misc': 361,
+  'Mortgage':4372,
+  'Movies & Music':0,
+  'Restaurants/Dining':0,
+  'Parking & Tolls':78,
+  'Pets':74,  
+  'Phone, Internet & Cable':382,
+  'Public Transport':19,
+  'Restaurants/Dining':250,
+  'Service Fee':0,
+  'Shipping & Postage': 34,
+  'Sports & Hobbies': 143,
+  'State Tax': 0,
+  'Tax preparation': 72,
+  'Travel & Vacation':500,
+  'Veterinary':75,
+  'Water':141,
+   # unbudgeted catefories from emoney:
+  'Rental Car':0,
+  'Credit Card Payment':0,
+  'Income':0,
+}
+  
+  
+  
+
+  
+
+
 def wait_for(condition_function):
   start_time = time.time() 
   while time.time() < start_time + 20: 
