@@ -4,6 +4,7 @@ from datetime import date
 import json
 import os
 import pdb
+from re import sub
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.select import Select
@@ -95,10 +96,22 @@ def load_emoney():
         time.sleep(5)
         # Grab results from table
         table = driver.find_element_by_xpath('//*[@id="Snb2Root"]/div/div/div[2]/div/div/div[1]/div[3]/div/table/tbody')
-        for row in table.find_elements_by_xpath('./tr'):
-            print('----------------------------')
-            for d in row.find_elements_by_xpath('./td'):
-                print(d.text)
+        expense_items = []
+        for table_row in table.find_elements_by_xpath('./tr'):
+            expense_item = {}
+            columns = [column for column in table_row.find_elements_by_xpath('./td')]
+            if len(columns) == 5:  # skip entries without 5 columns
+                for col_name, col_data in zip(['Date','Description','Account','Category','Amount'], columns):
+                    expense_item[col_name] = col_data.text
+                expense_item['Amount'] = float(sub(r'[^\d\-.]', '', expense_item['Amount']))
+                expense_items.append(expense_item)
+        totals = {}
+        for item in expense_items:
+            category = item['Category']
+            if item['Description'] in['AMZN MKTP US', 'AMAZON.COM']:
+                category = 'AMAZON'
+            totals[category] = totals.get(category, 0.0) + item['Amount']
+        print(json.dumps(totals, indent=3))
     driver.quit()
 
 
@@ -166,8 +179,9 @@ def load_amazon():
 # main starts here:
 def main():
     load_config()
-    #load_emoney()
-    load_amazon()
+    load_emoney()
+    time.sleep(5)
+    #load_amazon()
 
 main()    
     
