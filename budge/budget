@@ -1,0 +1,224 @@
+#!/usr/bin/env python3
+from collections import namedtuple
+import datetime
+import json
+from budget_defs import *
+import os
+import pdb
+from re import sub
+from selenium import webdriver
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support.select import Select
+import time
+
+CONFIG_PATH = os.path.expanduser('~/.budge.json')
+
+class wait_for_page_load(object):
+
+    MAX_WAIT = 20 # seconds
+    
+    def __init__(self, driver):
+        self.driver = driver
+    
+    def __enter__(self):
+       self.old_page = self.driver.find_element_by_tag_name('html')
+    
+    def page_has_loaded(self):
+       new_page = self.driver.find_element_by_tag_name('html')
+       return new_page.id != self.old_page.id
+    
+    def __exit__(self, *_):
+       start_time = time.time() 
+       while time.time() < start_time + self.MAX_WAIT:
+           if self.page_has_loaded(): 
+               return True 
+           else: 
+               time.sleep(0.1) 
+       raise Exception('Timeout waiting for page load')
+       
+
+
+def load_config(config_path):
+    if not os.path.exists(config_path):
+        with open(config_path, 'w+') as f:
+            f.write("""
+{ 
+  "emoney_url": "https://wealth.emaplan.com/ema/SignIn",
+  "emoney_username": "a@b.com",
+  "emoney_pwd": "xxx",
+  "amazon_url": "https://www.amazon.com",
+  "amazon_username": "a@b.com",
+  "amazon_password": "xxx",
+}
+""")
+    with open(config_path) as f:
+        return json.load(f, object_hook=lambda d:
+                      namedtuple('CONFIG', d.keys())(*d.values()))
+       
+def load_emoney(config, max_span):
+
+    # end_time is last second of yesterday
+    end_time = datetime.datetime.combine(datetime.datetime.today(), datetime.time(23, 59, 59)).timestamp() - DAY
+    start_time = end_time - max_span + BUDGET_FREQUENCY
+    start_date_range = datetime.date.fromtimestamp(start_time).strftime('%m/%d/%Y')
+    end_date_range = datetime.date.fromtimestamp(end_time).strftime('%m/%d/%Y')
+    # Print how many days we'll fetch from emoney:
+    print(
+      start_date_range, end_date_range, 
+      (datetime.date.fromtimestamp(end_time) - datetime.date.fromtimestamp(start_time)).days)
+    driver = webdriver.Chrome('/usr/bin/chromedriver')
+    with wait_for_page_load(driver):
+        driver.get(config.emoney_url)
+        username = driver.find_element_by_id('Username')
+        username.send_keys(config.emoney_username)
+        pwd = driver.find_element_by_id('Password')
+        pwd.send_keys(config.emoney_password)
+        pwd.send_keys(Keys.RETURN)
+    with wait_for_page_load(driver):
+        spending = driver.find_element_by_partial_link_text('Spending')
+        spending.click()
+    time.sleep(3)
+    with wait_for_page_load(driver):
+        transactions = driver.find_element_by_partial_link_text('Transactions')
+        transactions.click()
+        time.sleep(3)
+        # range_button 'Last 30 days'
+        range_button = driver.find_element_by_xpath('//*[@id="Snb2Root"]/div/div/div[2]/div/div/div[1]/div[1]/div[1]/div/div[1]/div/span[1]')
+        range_button.click()
+        time.sleep(3)
+        # 'Custom dates'
+        custom_dates = driver.find_element_by_xpath('//*[@id="Snb2Root"]/div/div/div[2]/div/div/div[1]/div[1]/div[1]/div/div[1]/div[2]/div[4]')
+        custom_dates.click()
+        time.sleep(3)
+        # set from_date, tab to to_date, and set it, then submit with \r\n:
+        from_date = driver.find_element_by_xpath('//*[@id="spending-and-budgeting-filter-start-date-picker"]')
+        from_date.send_keys('\b\b\b\b\b\b\b\b\b\b\b\b{}\t\t\b\b\b\b\b\b\b\b\b\b\b\b{}\r\n'.format(start_date_range, end_date_range))
+        time.sleep(5)
+        # Grab results from table
+        table = driver.find_element_by_xpath('//*[@id="Snb2Root"]/div/div/div[2]/div/div/div[1]/div[3]/div/table/tbody')
+        # The table lazy-loads, so we need to scroll it until all data is fetched
+        last_height = driver.execute_script("return document.body.scrollHeight")
+        while True:
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            # Wait to load page
+            time.sleep(3)
+            # Calculate new scroll height and compare with last scroll height
+            new_height = driver.execute_script("return document.body.scrollHeight")
+            if new_height == last_height:
+               break
+            last_height = new_height 
+        print('...scrolled table')
+        # parse table into list of maps, one map for each row
+        expense_items = []
+        for table_row in table.find_elements_by_xpath('./tr'):
+            expense_item = {}
+            columns = [column for column in table_row.find_elements_by_xpath('./td')]
+            if len(columns) == 5:  # skip entries without 5 columns
+                for col_name, col_data in zip(['Date','Description','Account','Category','Amount'], columns):
+                    expense_item[col_name] = col_data.text
+                # change 'Amount' value to a float
+                expense_item['Amount'] = float(sub(r'[^\d\-.]', '', expense_item['Amount']))
+                # change 'Date' value to a timestamp
+                expense_item['Date'] = datetime.datetime.timestamp(
+                  datetime.datetime.strptime(expense_item['Date']," %b %d, %Y"))
+                expense_items.append(expense_item)
+        print('...loaded table')
+        totals = {}
+        for item in expense_items:
+            category = item['Category']
+            if item['Description'] in['AMZN MKTP US', 'AMAZON.COM']:
+                    category = 'AMAZON'
+            if category in BUDGET:
+                budget_item = BUDGET[category]
+                if item['Date'] >= end_time - budget_item['span'] + BUDGET_FREQUENCY:
+                   # We subtract, not add, because expenditure is reported negative
+                   totals[category] = totals.get(category, 0.0) - item['Amount']
+            else:
+                print('unbudgeted category: {}'.format(category))
+        print('...totalled categories')                 
+        reports = []
+        for item in sorted(totals.keys()):
+            limit = BUDGET[item]['limit']
+            total = totals[item]
+            reports.append('{}: {} {:.2f}/{:.2f}'.format(item.rjust(32, ' '), '***' if total > limit else '   ', total, limit))
+        print('\n'.join(reports))
+    driver.quit()
+
+
+def load_amazon(config):
+    driver = webdriver.Chrome('/usr/bin/chromedriver')
+    end_time = time.time()
+    start_time = end_time - (days * 24 * 60 * 60) # 30 days
+    start_date_range = datetime.date.fromtimestamp(start_time).strftime('%-m/%d/%Y')
+    start_month, start_day, start_year = start_date_range.split('/')
+    end_date_range = datetime.date.fromtimestamp(end_time).strftime('%-m/%d/%Y')
+    end_month, end_day, end_year = end_date_range.split('/')
+
+    with wait_for_page_load(driver):
+        driver.get(config.amazon_url)
+        sign_in_securely_button = driver.find_element_by_id('a-autoid-0-announce')
+        sign_in_securely_button.click()
+        time.sleep(1)
+    with wait_for_page_load(driver):
+        email_input = driver.find_element_by_id('ap_email')
+        email_input.send_keys(config.amazon_username)
+        continue_button = driver.find_element_by_id('continue')
+        continue_button.click()
+        time.sleep(1)
+    with wait_for_page_load(driver):
+        password_input = driver.find_element_by_id('ap_password')
+        password_input.send_keys(config.amazon_password)
+        sign_in_button = driver.find_element_by_id('signInSubmit')
+        sign_in_button.click()
+        time.sleep(1)
+    with wait_for_page_load(driver):
+        account_list_link = driver.find_element_by_id('nav-link-accountList')
+        account_list_link.click()
+        time.sleep(1)
+    with wait_for_page_load(driver):
+        download_order_reports_link = driver.find_element_by_link_text('Download order reports')
+        download_order_reports_link.click()
+        time.sleep(1)
+    with wait_for_page_load(driver):
+        report_month_start = Select(driver.find_element_by_id('report-month-start'))
+        report_month_start.select_by_value('{}'.format(start_month))
+        report_day_start = Select(driver.find_element_by_id('report-day-start'))
+        report_day_start.select_by_value('{}'.format(start_day))  #'1' to '30' or whatever
+        report_year_start = Select(driver.find_element_by_id('report-year-start'))
+        report_year_start.select_by_value('{}'.format(start_year))  #'2020'  or whatever
+        report_month_end = Select(driver.find_element_by_id('report-month-end'))
+        report_month_end.select_by_value('{}'.format(end_month))  #'1' to '12'
+        report_day_end = Select(driver.find_element_by_id('report-day-end'))
+        report_day_end.select_by_value('{}'.format(end_day))  #'1' to '30' or whatever
+        report_year_end = Select(driver.find_element_by_id('report-year-end'))
+        report_year_end.select_by_value('{}'.format(end_year))  #'2020'  or whatever
+
+        # remove older report(s)
+        downloads_dir = os.path.expanduser('~/Downloads')
+        files = [file for file in os.listdir(downloads_dir)]
+        files = [file for file in files if file.endswith('.csv') and '_to_' in file]
+        [os.remove(os.path.join(downloads_dir, file)) for file in files]
+        # generate new report
+        report_confirm_button = driver.find_element_by_id('report-confirm')
+        report_confirm_button.click()
+        time.sleep(60)
+    driver.quit()
+
+
+# main starts here:
+def main():
+    config = load_config(CONFIG_PATH)
+    # determine the maximum span from budget_defs
+    max_span = max([value['span'] for value in BUDGET.values()])
+    try:
+        load_emoney(config, max_span)
+    except Exception as ex:
+        print(ex)
+        pdb.set_trace()
+    time.sleep(60 * 60)
+    return
+    time.sleep(5)
+    #load_amazon()
+
+main()    
+    
