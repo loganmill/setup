@@ -1,13 +1,29 @@
+from collections import namedtuple
+import datetime
+import os
 
-# All time values (YEAR, MONTH, BUDGET_FREQ, 'span' values') are in seconds.
+DATE_FORMAT = '%Y-%m-%d'
 
-DAY = 24.0 * 60 * 60
+# All time values (YEAR, MONTH, BUDGET_FREQ, 'span' values') are in days.
+
+DAY = 1
 WEEK = 7 * DAY
 MONTH = DAY * 30
 YEAR = 365 * DAY
 
-# Define how often you run the budget app, always a multiple of DAY
-BUDGET_FREQUENCY = DAY * 1
+CONFIG_PATH = os.path.expanduser('~/.budget_config.json')
+CACHE_PATH = os.path.expanduser('~/.budget_cache.json')
+EMONEY_CACHE_PATH = os.path.expanduser('~/.emoney_cache.json')
+
+# Define end date of budget, usually 'now'.
+# today() is equivalent to date.fromtimestamp(time.time())
+# Examples:
+# datetime.datetime.today()
+# datetime.datetime.strptime('2019-11-19, DATE_FORMAT) 
+# datetime.datetime.fromisoformat('2019-11-19')
+END_DATE = datetime.date.today() - datetime.timedelta(days=1)
+# Define how often you run the budget app, in days
+BUDGET_FREQUENCY = 1
 
 BUDGET = {
    'AMAZON':{
@@ -116,3 +132,4 @@ BUDGET = {
 }
   
   
+EXPENDITURE = namedtuple('EXPENDITURE',['category','source','amount'])
