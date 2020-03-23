@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from collections import namedtuple
+import csv
 import datetime
 import json
 from budget_defs import *
@@ -9,6 +10,7 @@ from re import sub
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.select import Select
+from selenium.common.exceptions import NoSuchElementException
 import sys
 import time
 
@@ -54,153 +56,64 @@ def load_config():
         return json.load(f, object_hook=lambda d:
                       namedtuple('CONFIG', d.keys())(*d.values()))
 
-def write_emoney_cache(cache):
-    if os.path.exists(EMONEY_CACHE_PATH):
-        os.rename(EMONEY_CACHE_PATH, EMONEY_CACHE_PATH + '.prev')
-    with open(EMONEY_CACHE_PATH, 'w+') as f:
-        f.write('{\n\n')
-        items_knt = 0 ; items_limit = len(cache)
-        for date, items in cache.items():
-           f.write('\n  ' + datetime.date.strftime(date, DATE_FORMAT) + ':\n')
-           json.dump(items, f, indent=2)
-           items_knt += 1
-           if items_knt != items_limit:
-               f.write(',')
-        f.write('\n}\n')
+def compute_budget(config, emoney_cache, amazon_cache):
+    totals = {}
+    budget_frequency = datetime.timedelta(days=BUDGET_FREQUENCY)
+    for date, expenses in emoney_cache.items():
+        for expense in expenses:
+            category, description = expense['Category'], expense['Description']
+            if description in['AMZN MKTP US', 'AMAZON.COM']:
+                continue ; # rem grd, could sum and check against amazon below
+            if category not in BUDGET:
+                print('Unknwon Emoney category: {}'.format(category))
+                category = 'Unknown Emoney'
+            if date >= END_DATE - datetime.timedelta(
+                days=BUDGET[category]['span']) + budget_frequency:
+                amount = expense['Amount']
+                if category == 'Kids':
+                    if 'DERR' in description and amount > 120:
+                       # < 120 is health, otherwise shared expense with GF
+                       amount /= 2.0
+                totals[category] = totals.get(category, 0.0) + amount
 
-def load_emoney_cache():
-    with open(EMONEY_CACHE_PATH) as f:
-        try:
-            cache = json.load(f)
-        except:
-            print('Empty or corrupt EMONEY cache "{}", using empty cache'.format(EMONEY_CACHE_PATH))
-            cache = {}
-    for date in cache.keys(): # convert all keys to datetime.date objects
-         cache[datetime.datetime.strptime(date, DATE_FORMAT).date()] = cache.pop(date)
-    return cache
+    for date, expenses in amazon_cache.items():
+        for expense in expenses:
+            category = expense['Category']
+            # translate amazon category, if possible
+            if expense['Shipping Address City'] != 'Louisville': # assume shipping
+                category = 'Gifts' # to other cities are gifts
+            elif category in AMAZON_CATEGORIES: # try to 'translate' category
+                category = AMAZON_CATEGORIES[category]
+            elif category not in BUDGET:
+                print('Unknown Amazon category: {}'.format(category))
+                category = 'Unknown Amazon'
+                pdb.set_trace()
+            if date >= END_DATE - datetime.timedelta(
+                days=BUDGET[category]['span']) + budget_frequency:
+                amount = expense['Item Total']
+                totals[category] = totals.get(category, 0.0) + amount
+    reports = []
+    # print sorted     
+    for item in sorted(totals.keys()):
+        limit = BUDGET[item]['limit']
+        total = totals[item]
+        reports.append('{}: {} {:.2f}/{:.2f}'.format(item.rjust(32, ' '), '***' if total > limit else '   ', total, limit))
+    print('\n'.join(reports))
 
-def load_emoney(config, cache, max_span):
-    # emoney dates are (greater than or equal to start date) --- (less than or equal to end date)
-    # end_time is last second of yesterday
-    start_date = END_DATE - datetime.timedelta(days=max_span) + datetime.timedelta(days=BUDGET_FREQUENCY)
-    start_date_range = start_date.strftime('%m/%d/%Y')
-    end_date_range = END_DATE.strftime('%m/%d/%Y')
 
-    # Print how many days we'll fetch from emoney:
-    print(
-      start_date_range, end_date_range,
-      (END_DATE - start_date))
-
-    # Find first date not in cache
-
+def scrape_amazon_expenses(config, start_date, end_date):
+    expenses = {}
     driver = webdriver.Chrome('/usr/bin/chromedriver')
-    with wait_for_page_load(driver):
-        driver.get(config.emoney_url)
-        username = driver.find_element_by_id('Username')
-        username.send_keys(config.emoney_username)
-        pwd = driver.find_element_by_id('Password')
-        pwd.send_keys(config.emoney_password)
-        pwd.send_keys(Keys.RETURN)
-    with wait_for_page_load(driver):
-        spending = driver.find_element_by_partial_link_text('Spending')
-        spending.click()
-    time.sleep(3)
-    with wait_for_page_load(driver):
-        transactions = driver.find_element_by_partial_link_text('Transactions')
-        transactions.click()
-        time.sleep(3)
-        # range_button 'Last 30 days'
-        range_button = driver.find_element_by_xpath('//*[@id="Snb2Root"]/div/div/div[2]/div/div/div[1]/div[1]/div[1]/div/div[1]/div/span[1]')
-        range_button.click()
-        time.sleep(3)
-        # 'Custom dates'
-        custom_dates = driver.find_element_by_xpath('//*[@id="Snb2Root"]/div/div/div[2]/div/div/div[1]/div[1]/div[1]/div/div[1]/div[2]/div[4]')
-        custom_dates.click()
-        time.sleep(3)
-        # set from_date, tab to to_date, and set it, then submit with \r\n:
-        from_date = driver.find_element_by_xpath('//*[@id="spending-and-budgeting-filter-start-date-picker"]')
-        from_date.send_keys('\b\b\b\b\b\b\b\b\b\b\b\b{}\t\t\b\b\b\b\b\b\b\b\b\b\b\b{}\r\n'.format(start_date_range, end_date_range))
-        time.sleep(5)
-        # Grab results from table
-        table = driver.find_element_by_xpath('//*[@id="Snb2Root"]/div/div/div[2]/div/div/div[1]/div[3]/div/table/tbody')
-        # The table lazy-loads, so we need to scroll it until all data is fetched
-        last_height = driver.execute_script("return document.body.scrollHeight")
-        while True:
-            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            # Wait to load page
-            time.sleep(3)
-            # Calculate new scroll height and compare with last scroll height
-            new_height = driver.execute_script("return document.body.scrollHeight")
-            if new_height == last_height:
-               break
-            last_height = new_height 
-        print('...scrolled table')
-        # parse table into list of maps, one map for each row
-        expense_items = []
-        cache = {}
-        for table_row in table.find_elements_by_xpath('./tr'):
-            expense_item = {}
-            columns = [column for column in table_row.find_elements_by_xpath('./td')]
-            if len(columns) == 5:  # skip entries without 5 columns
-                for col_name, col_data in zip(['Date','Description','Account','Category','Amount'], columns):
-                    expense_item[col_name] = col_data.text
-                # change 'Amount' value to a float
-                expense_item['Amount'] = float(sub(r'[^\d\-.]', '', expense_item['Amount']))
-                # change 'Date' value to date object
-                expense_date  = datetime.datetime.strptime(expense_item['Date']," %b %d, %Y").date()
-                expense_item['Date'] = expense_date
-                expense_items.append(expense_item)
-                expenses_for_date = cache.get(expense_date, [])
-                expenses_for_date.append(
-                    EXPENDITURE._make([expense_item['Category'],'EMONEY', expense_item['Amount']]))
-                cache[expense_date] = expenses_for_date
-        print('...loaded table')
-
-        ### write the cache
-        # write_cache(cache)
-
-        totals = {}
-        for item in expense_items:
-            category = item['Category']
-            if item['Description'] in['AMZN MKTP US', 'AMAZON.COM']:
-                    category = 'AMAZON'
-            if category in BUDGET:
-                budget_item = BUDGET[category]
-                if item['Date'] >= END_DATE - datetime.timedelta(days=budget_item['span']) +\
-                     datetime.timedelta(days=BUDGET_FREQUENCY):
-                   # We subtract, not add, because expenditure is reported negative
-                   totals[category] = totals.get(category, 0.0) - item['Amount']
-            else:
-                print('unbudgeted category: {}'.format(category))
-        print('...totalled categories')                 
-        reports = []
-
-        
-
-
-        for item in sorted(totals.keys()):
-            limit = BUDGET[item]['limit']
-            total = totals[item]
-            reports.append('{}: {} {:.2f}/{:.2f}'.format(item.rjust(32, ' '), '***' if total > limit else '   ', total, limit))
-        print('\n'.join(reports))
-    driver.quit()
-
-
-def load_amazon(config):
-    '''
-    global END_TIME
-    driver = webdriver.Chrome('/usr/bin/chromedriver')
-    start_time = END_TIME - (days * 24 * 60 * 60) # 30 days
-    start_date_range = datetime.date.fromtimestamp(start_time).strftime('%-m/%d/%Y')
-    start_month, start_day, start_year = start_date_range.split('/')
-    end_date_range = datetime.date.fromtimestamp(end_time).strftime('%-m/%d/%Y')
-    end_month, end_day, end_year = end_date_range.split('/')
+    start_month, start_day, start_year = start_date.strftime('%-m/%d/%Y').split('/')
+    end_month, end_day, end_year = end_date.strftime('%-m/%d/%Y').split('/')
 
     with wait_for_page_load(driver):
         driver.get(config.amazon_url)
+        time.sleep(2)
         sign_in_securely_button = driver.find_element_by_id('a-autoid-0-announce')
         sign_in_securely_button.click()
         time.sleep(1)
+
     with wait_for_page_load(driver):
         email_input = driver.find_element_by_id('ap_email')
         email_input.send_keys(config.amazon_username)
@@ -243,19 +156,40 @@ def load_amazon(config):
         # generate new report
         report_confirm_button = driver.find_element_by_id('report-confirm')
         report_confirm_button.click()
-        time.sleep(60)
+        time.sleep(10) # change to, say, 45 later
+        # open new report and parse
+        files = [file for file in os.listdir(downloads_dir)]
+        file = [file for file in files if file.endswith('.csv') and '_to_' in file][0]
+        with open(os.path.join(downloads_dir,file)) as f:
+            reader = csv.reader(f)
+            columns = None
+            for item in reader:
+                if columns is None:
+                    columns = item
+                    continue
+                expense_item = dict(zip(columns, item))
+                expense_item['Item Total'] = float(sub(r'[^\d\-.]', '', expense_item['Item Total']))
+                expense_date  = datetime.datetime.strptime(expense_item.pop('Order Date'),"%m/%d/%y").date() # mm/dd/yy
+                expenses_for_date = expenses.get(expense_date, [])
+                expenses_for_date.append(expense_item)
+                expenses[expense_date] = expenses_for_date
+        if start_date not in expenses: # No expenses for end_date, so enter empty list
+            expenses[start_date] = []
+        if end_date not in expenses: # No expenses for end_date, so enter empty list
+            expenses[end_date] = []
     driver.quit()
-    '''
-
+    return expenses
 
 def scrape_emoney_expenses(config, start_date, end_date):
+    # all expenses >= start_date and <= end_date. If start_date == end_date,
+    # you'll get 1 day.
     expenses = {}
     start_date_range = start_date.strftime('%m/%d/%Y')
     end_date_range = end_date.strftime('%m/%d/%Y')
+    driver = webdriver.Chrome('/usr/bin/chromedriver')
     try: 
         # Print how many days we'll fetch from emoney:
         print(start_date_range, end_date_range)
-        driver = webdriver.Chrome('/usr/bin/chromedriver')
         with wait_for_page_load(driver):
             driver.get(config.emoney_url)
             username = driver.find_element_by_id('Username')
@@ -271,57 +205,110 @@ def scrape_emoney_expenses(config, start_date, end_date):
             transactions = driver.find_element_by_partial_link_text('Transactions')
             transactions.click()
             time.sleep(3)
-            # range_button 'Last 30 days'
-            range_button = driver.find_element_by_xpath('//*[@id="Snb2Root"]/div/div/div[2]/div/div/div[1]/div[1]/div[1]/div/div[1]/div/span[1]')
-            range_button.click()
+        # range_button 'Last 30 days'
+        range_button = driver.find_element_by_xpath('//*[@id="Snb2Root"]/div/div/div[2]/div/div/div[1]/div[1]/div[1]/div/div[1]/div/span[1]')
+        range_button.click()
+        time.sleep(3)
+        # 'Custom dates'
+        custom_dates = driver.find_element_by_xpath('//*[@id="Snb2Root"]/div/div/div[2]/div/div/div[1]/div[1]/div[1]/div/div[1]/div[2]/div[4]')
+        custom_dates.click()
+        time.sleep(3)
+        # set from_date, tab to to_date, and set it, then submit with \r\n:
+        from_date = driver.find_element_by_xpath('//*[@id="spending-and-budgeting-filter-start-date-picker"]')
+        from_date.send_keys('\b\b\b\b\b\b\b\b\b\b\b\b{}\t\t\b\b\b\b\b\b\b\b\b\b\b\b{}\r\n'.format(start_date_range, end_date_range))
+        time.sleep(5)
+        # Grab results from table
+        table = driver.find_element_by_xpath('//*[@id="Snb2Root"]/div/div/div[2]/div/div/div[1]/div[3]/div/table/tbody')
+        # The table lazy-loads, so we need to scroll it until all data is fetched
+        last_height = driver.execute_script("return document.body.scrollHeight")
+        while True:
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            # Wait to load page
             time.sleep(3)
-            # 'Custom dates'
-            custom_dates = driver.find_element_by_xpath('//*[@id="Snb2Root"]/div/div/div[2]/div/div/div[1]/div[1]/div[1]/div/div[1]/div[2]/div[4]')
-            custom_dates.click()
-            time.sleep(3)
-            # set from_date, tab to to_date, and set it, then submit with \r\n:
-            from_date = driver.find_element_by_xpath('//*[@id="spending-and-budgeting-filter-start-date-picker"]')
-            from_date.send_keys('\b\b\b\b\b\b\b\b\b\b\b\b{}\t\t\b\b\b\b\b\b\b\b\b\b\b\b{}\r\n'.format(start_date_range, end_date_range))
-            time.sleep(5)
-            # Grab results from table
-            table = driver.find_element_by_xpath('//*[@id="Snb2Root"]/div/div/div[2]/div/div/div[1]/div[3]/div/table/tbody')
-            # The table lazy-loads, so we need to scroll it until all data is fetched
-            last_height = driver.execute_script("return document.body.scrollHeight")
-            while True:
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                # Wait to load page
-                time.sleep(3)
-                # Calculate new scroll height and compare with last scroll height
-                new_height = driver.execute_script("return document.body.scrollHeight")
-                if new_height == last_height:
-                   break
-                last_height = new_height 
-            print('...scrolled table')
-            # parse table into dict, keyed by date object, with values a list of all expenses
-            # incurred on that date.
-    
-            for table_row in table.find_elements_by_xpath('./tr'):
-                columns = [column.text for column in table_row.find_elements_by_xpath('./td')]
-                if len(columns) == 5:  # skip entries without 5 columns...for example, divider row(s)
-                    expense_item = dict(zip(['Date','Description','Account','Category','Amount'], columns))
-                    # change 'Amount' value to a float
-                    expense_item['Amount'] = float(sub(r'[^\d\-.]', '', expense_item['Amount']))
-                    expense_date  = datetime.datetime.strptime(expense_item.pop('Date')," %b %d, %Y").date()
-                    expenses_for_date = expenses.get(expense_date, [])
-                    expenses_for_date.append(expense_item)
-                    expenses[expense_date] = expenses_for_date
-    except:
-        print('Scraping error, or no transactions for {} to {}'.format(start_date_range, end_date_range))
+            # Calculate new scroll height and compare with last scroll height
+            new_height = driver.execute_script("return document.body.scrollHeight")
+            if new_height == last_height:
+               break
+            last_height = new_height 
+        print('...scrolled table')
+        # parse table into dict, keyed by date object, with values a list of all expenses
+        # incurred on that date.
+
+        for table_row in table.find_elements_by_xpath('./tr'):
+            columns = [column.text for column in table_row.find_elements_by_xpath('./td')]
+            if len(columns) == 5:  # skip entries without 5 columns...for example, divider row(s)
+                expense_item = dict(zip(['Date','Description','Account','Category','Amount'], columns))
+                # change 'Amount' value to a float
+                expense_item['Amount'] = -float(sub(r'[^\d\-.]', '', expense_item['Amount']))
+                expense_date  = datetime.datetime.strptime(expense_item.pop('Date')," %b %d, %Y").date()
+                expenses_for_date = expenses.get(expense_date, [])
+                expenses_for_date.append(expense_item)
+                expenses[expense_date] = expenses_for_date
+    except: # NoSuchElementException:
+        date = start_date
+        day = datetime.timedelta(days=1)
+        while date <= end_date:
+            print('No transactions for {} (or scraping failure)'.format(date))
+            expenses[date] = []
+            date += day
+    driver.quit()
     return expenses
 
 
+def get_amazon_cache(config):
+    # load the cache file
+    try:
+        with open(AMAZON_CACHE_PATH) as f:
+            cache = json.load(f)
+    except:
+        print('Missing (or corrupt) AMAZON cache "{}", using empty cache'.format(AMAZON_CACHE_PATH))
+        cache = {}
+    dates = list(cache.keys())
+    for date in dates: # convert all keys to datetime.date objects
+         cache[datetime.datetime.strptime(date, DATE_FORMAT).date()] = cache.pop(date)
+
+    # update the cache with more recent + older entries
+    max_span = max([value['span'] for value in BUDGET.values()])
+    start_date = END_DATE - datetime.timedelta(days=max_span)
+    if not cache.keys(): # empty cache
+        print('initial fetch: {} {}'.format(start_date, END_DATE))
+        cache = scrape_amazon_expenses(config, start_date, END_DATE)
+    else:
+        max_cache = max(cache.keys()) - datetime.timedelta(days=UNCACHE)
+        if END_DATE > max_cache:
+            print('head fetch: {} {}'.format(max_cache + datetime.timedelta(days=1), END_DATE)) 
+            cache.update(scrape_amazon_expenses(config, max_cache + datetime.timedelta(days=1), END_DATE))
+        else:
+            print('no heads to fetch')
+        min_cache = min(cache.keys())
+        if start_date < min_cache:
+            print('tail fetch: {} {}'.format(start_date, min_cache - datetime.timedelta(days=1)))
+            cache.update(scrape_amazon_expenses(config, start_date, min_cache - datetime.timedelta(days=1)))
+        else:
+            print('no tails to fetch')
+    # Save the updated cache back to filesystem
+    if os.path.exists(AMAZON_CACHE_PATH):
+        os.rename(AMAZON_CACHE_PATH, AMAZON_CACHE_PATH + '.prev')
+    with open(AMAZON_CACHE_PATH, 'w+') as f:
+        f.write('{')
+        items_knt = 0 ; items_limit = len(cache)
+        for date, items in cache.items():
+           f.write('\n\n"' + datetime.date.strftime(date, DATE_FORMAT) + '":\n')
+           json.dump(items, f, indent=2)
+           items_knt += 1
+           if items_knt != items_limit:
+               f.write(',')
+        f.write('\n}\n')
+    return cache
+
+  
 def get_emoney_cache(config):
     # load the cache file
     try:
         with open(EMONEY_CACHE_PATH) as f:
             cache = json.load(f)
     except:
-        print('Empty or corrupt EMONEY cache "{}", using empty cache'.format(EMONEY_CACHE_PATH))
+        print('Missing (or corrupt) EMONEY cache "{}", using empty cache'.format(EMONEY_CACHE_PATH))
         cache = {}
     dates = list(cache.keys())
     for date in dates: # convert all keys to datetime.date objects
@@ -334,7 +321,7 @@ def get_emoney_cache(config):
         print('initial fetch: {} {}'.format(start_date, END_DATE))
         cache = scrape_emoney_expenses(config, start_date, END_DATE)
     else:
-        max_cache = max(cache.keys())
+        max_cache = max(cache.keys()) - datetime.timedelta(days=UNCACHE)
         if END_DATE > max_cache:
             print('head fetch: {} {}'.format(max_cache + datetime.timedelta(days=1), END_DATE)) 
             cache.update(scrape_emoney_expenses(config, max_cache + datetime.timedelta(days=1), END_DATE))
@@ -343,7 +330,7 @@ def get_emoney_cache(config):
         min_cache = min(cache.keys())
         if start_date < min_cache:
             print('tail fetch: {} {}'.format(start_date, min_cache - datetime.timedelta(days=1)))
-            cache.update(scrape_emoney_cache(config, emoney_cache, start_date, min_cache - datetime.timedelta(days=1)))
+            cache.update(scrape_emoney_cache(config, start_date, min_cache - datetime.timedelta(days=1)))
         else:
             print('no tails to fetch')
     # Save the updated cache back to filesystem
@@ -362,17 +349,14 @@ def get_emoney_cache(config):
     return cache
 
 
-
 # main starts here:
 def main():
     config = load_config()
     emoney_cache = get_emoney_cache(config)
+    amazon_cache = get_amazon_cache(config)
+    # ...analyse budget...
+    compute_budget(config, emoney_cache, amazon_cache)
     return
-    # determine the maximum span from budget_defs
-    max_span = max([value['span'] for value in BUDGET.values()])
-    load_emoney(config, cache, max_span)
-    time.sleep(60 * 60)
-    #load_amazon()
 
 try:
     main()

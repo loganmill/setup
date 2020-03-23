@@ -12,8 +12,8 @@ MONTH = DAY * 30
 YEAR = 365 * DAY
 
 CONFIG_PATH = os.path.expanduser('~/.budget_config.json')
-CACHE_PATH = os.path.expanduser('~/.budget_cache.json')
 EMONEY_CACHE_PATH = os.path.expanduser('~/.emoney_cache.json')
+AMAZON_CACHE_PATH = os.path.expanduser('~/.amazon_cache.json')
 
 # Define end date of budget, usually 'now'.
 # today() is equivalent to date.fromtimestamp(time.time())
@@ -22,12 +22,21 @@ EMONEY_CACHE_PATH = os.path.expanduser('~/.emoney_cache.json')
 # datetime.datetime.strptime('2019-11-19, DATE_FORMAT) 
 # datetime.datetime.fromisoformat('2019-11-19')
 END_DATE = datetime.date.today() - datetime.timedelta(days=1)
-# Define how often you run the budget app, in days
-BUDGET_FREQUENCY = 1
+
+# Define how often you run the budget app, in days.
+# This creates how much 'free space' you have for an item.
+BUDGET_FREQUENCY = 1  # Normally 1 day
+
+# Define how many days of cache to 'invalidate', as more recent
+# items in emoney (amazon?) can change for up to 3 weeks after their
+# posted date. 
+UNCACHE =  0 # Normally 21 days
 
 BUDGET = {
-   'AMAZON':{
-     'limit':0, 'span': WEEK},
+   'Unknown Amazon':{
+     'limit':0, 'span': MONTH},
+   'Unknown Emoney':{
+     'limit':0, 'span': MONTH},
    'Alcohol & Bars':{
       'limit':50, 'span': MONTH},
   'Auto Service':{
@@ -132,4 +141,14 @@ BUDGET = {
 }
   
   
-EXPENDITURE = namedtuple('EXPENDITURE',['category','source','amount'])
+AMAZON_CATEGORIES = {
+    'OUTDOOR_RECREATION_PRODUCT':'Sports & Hobbies',
+    'BEAUTY':'Merchandise/Misc',
+    'PERSONAL_COMPUTER':'Electronics & Software',
+    'TUNER':'Electronics & Software',
+    'HARDWARE':'Home Improvement/Maintenance',
+    'ELECTRONIC_COMPONENT':'Electronics & Software',
+    'POWER_SUPPLIES_OR_PROTECTION':'Electronics & Software',
+    'WIRELESS_ACCESSORY':'Electronics & Software',
+    'TOOLS':'Home Improvement/Maintenance'
+}
