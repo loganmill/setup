@@ -1,0 +1,66 @@
+
+<CategoryButton@Button>:
+    size_hint_y: None
+    height:30
+    background_color: 1,1,1,1
+    color: 0,0,0,1
+    background_normal: ''
+
+<DateLabel@Label>:
+    padding: [30, 0]
+    text_size: self.size
+    halign: 'left'
+    valign: 'center'
+    size_hint_y: None
+    height: 40
+    color: 0,0,0
+    canvas.before:
+        Color:
+            rgb: .9,.9,.9
+        Rectangle:
+            size: self.size
+            pos: self.pos
+        
+<ExpenseItem@BoxLayout>:
+    orientation: 'horizontal'
+    Label:
+        on_parent: root.key = self
+        color: 0,0,0
+        size_hint_x: None
+        width: 200
+        text_size: self.size
+        halign: 'right'
+        valign: 'middle'
+    Label:
+        id: value
+        padding: [10,0]
+        on_parent: root.value = self
+        color: 0,0,0
+        text_size: self.size
+        halign: 'left'
+        shorten: True
+        valign: 'middle'
+        
+<Expense@BoxLayout>:
+    padding: 0,0,20,0
+    size_hint_y: None
+    orientation: 'vertical'
+    height: 100
+
+ScrollView:
+    on_parent: if self.parent: app.populate(expense_layout)
+    do_scroll_x: False
+    canvas.before:
+        Color:
+            rgb: 1,1,1
+        Rectangle:
+            size: self.size
+            pos: self.pos
+
+    BoxLayout:
+        spacing: 20
+        orientation: 'vertical'
+        size_hint_y: None
+        on_children: self.height = sum([child.height+self.spacing for child in self.children])
+        id: expense_layout    
+
