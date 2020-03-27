@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 from collections import namedtuple
 import csv
 import datetime
@@ -48,8 +49,11 @@ def load_config():
             '  "emoney_username": "a@b.com",\n' + 
             '  "emoney_pwd": "xxx",\n' + 
             '  "amazon_url": "https://www.amazon.com",\n' +
-            '  "amazon_username": "a@b.com",\n' +
-            '  "amazon_password": "xxx"\n' +
+            '  "amazon_username_grd": "a@b.com",\n' +
+            '  "amazon_password_grd": "xxx",\n' +
+            '  "amazon_username_cfe": "a@b.com",\n' +
+            '  "amazon_password_cfe": "xxx"\n' +
+
             '}\n')
         sys.exit(0)
     with open(CONFIG_PATH) as f:
@@ -62,8 +66,10 @@ def compute_budget(config, emoney_cache, amazon_cache):
     for date, expenses in emoney_cache.items():
         for expense in expenses:
             category, description = expense['Category'], expense['Description']
+            if category == 'Amazon':
+                continue # should appear in amazon_cache
             if description in['AMZN MKTP US', 'AMAZON.COM']:
-                continue ; # rem grd, could sum and check against amazon below
+                continue ; # These should have category as 'AMAZON', but just in case...
             if category not in BUDGET:
                 print('Unknwon Emoney category: {}'.format(category))
                 category = 'Unknown Emoney'
@@ -76,18 +82,36 @@ def compute_budget(config, emoney_cache, amazon_cache):
                        amount /= 2.0
                 totals[category] = totals.get(category, 0.0) + amount
 
+    # AMAZON_EXCEPTIONS_PATH has same format as AMAZON_CACHE_PATH, but
+    # is hand-generated. Only 'Order ID' and 'Category' keys need be
+    # defined (others are ignored). If an item in AMAZON_CACHE_PATH
+    # matches date and order id, the EXCEPTION's Category overrides
+    # that in the CACHE.
+    try:
+        with open(AMAZON_EXCEPTIONS_PATH) as f:
+            amazon_exceptions = json.load(f)
+    except:
+        print('Missing (or corrupt) AMAZON EXCEPTIONS, "{}", using empty file'.format(AMAZON_EXCEPTIONS_PATH))
+        amazon_exceptions = {}
+    dates = list(amazon_exceptions.keys())
+    for date in dates: # convert all keys to datetime.date objects
+         amazon_exceptions[datetime.datetime.strptime(date, DATE_FORMAT).date()] = amazon_exceptions.pop(date)
+
     for date, expenses in amazon_cache.items():
+        days_exceptions = amazon_exceptions.get(date, [])
+        exceptions_map = { item['Order ID']: item['Category'] for item in days_exceptions }
         for expense in expenses:
             category = expense['Category']
             # translate amazon category, if possible
-            if expense['Shipping Address City'] != 'Louisville': # assume shipping
+            if expense['Order ID'] in exceptions_map:
+                category = exceptions_map[expense['Order ID']]
+            elif expense['Shipping Address City'] != 'Louisville': # assume shipping
                 category = 'Gifts' # to other cities are gifts
             elif category in AMAZON_CATEGORIES: # try to 'translate' category
                 category = AMAZON_CATEGORIES[category]
             elif category not in BUDGET:
                 print('Unknown Amazon category: {}'.format(category))
                 category = 'Unknown Amazon'
-                pdb.set_trace()
             if date >= END_DATE - datetime.timedelta(
                 days=BUDGET[category]['span']) + budget_frequency:
                 amount = expense['Item Total']
@@ -96,17 +120,19 @@ def compute_budget(config, emoney_cache, amazon_cache):
     # print sorted     
     for item in sorted(totals.keys()):
         limit = BUDGET[item]['limit']
+        span = BUDGET[item]['span']
         total = totals[item]
-        reports.append('{}: {} {:.2f}/{:.2f}'.format(item.rjust(32, ' '), '***' if total > limit else '   ', total, limit))
+        reports.append('{}: {} {:.2f}/{:.2f} {} days'.format(item.rjust(32, ' '), '***' if total > limit else '   ', total, limit, span))
     print('\n'.join(reports))
 
 
-def scrape_amazon_expenses(config, start_date, end_date):
+def scrape_amazon_expenses(config, username, password, start_date, end_date):
+    # 
     expenses = {}
     driver = webdriver.Chrome('/usr/bin/chromedriver')
-    start_month, start_day, start_year = start_date.strftime('%-m/%d/%Y').split('/')
-    end_month, end_day, end_year = end_date.strftime('%-m/%d/%Y').split('/')
-
+    # for windows, %-m/%#d/%Y  might work...
+    start_month, start_day, start_year = start_date.strftime('%-m/%-d/%Y').split('/')
+    end_month, end_day, end_year = end_date.strftime('%-m/%-d/%Y').split('/')
     with wait_for_page_load(driver):
         driver.get(config.amazon_url)
         time.sleep(2)
@@ -116,13 +142,13 @@ def scrape_amazon_expenses(config, start_date, end_date):
 
     with wait_for_page_load(driver):
         email_input = driver.find_element_by_id('ap_email')
-        email_input.send_keys(config.amazon_username)
+        email_input.send_keys(username)
         continue_button = driver.find_element_by_id('continue')
         continue_button.click()
         time.sleep(1)
     with wait_for_page_load(driver):
         password_input = driver.find_element_by_id('ap_password')
-        password_input.send_keys(config.amazon_password)
+        password_input.send_keys(password)
         sign_in_button = driver.find_element_by_id('signInSubmit')
         sign_in_button.click()
         time.sleep(1)
@@ -167,6 +193,12 @@ def scrape_amazon_expenses(config, start_date, end_date):
                 if columns is None:
                     columns = item
                     continue
+                if len(item) < 30:
+                    # If no data for time period, Amazon returns a single row with
+                    # 1 column containing 'No data found for this time period'. Normally, there
+                    # are 36 columns, and 'Item Total' (column 30) is the last we need.
+                    # Skip row if we don't have at least 30 columns.
+                    continue
                 expense_item = dict(zip(columns, item))
                 expense_item['Item Total'] = float(sub(r'[^\d\-.]', '', expense_item['Item Total']))
                 expense_date  = datetime.datetime.strptime(expense_item.pop('Order Date'),"%m/%d/%y").date() # mm/dd/yy
@@ -180,9 +212,13 @@ def scrape_amazon_expenses(config, start_date, end_date):
     driver.quit()
     return expenses
 
+
+
 def scrape_emoney_expenses(config, start_date, end_date):
     # all expenses >= start_date and <= end_date. If start_date == end_date,
     # you'll get 1 day.
+    # We generate and scrape from the table rather than downloading .csv, as
+    # the .csv route pops up a native save panel that we can't automate.
     expenses = {}
     start_date_range = start_date.strftime('%m/%d/%Y')
     end_date_range = end_date.strftime('%m/%d/%Y')
@@ -266,26 +302,33 @@ def get_amazon_cache(config):
     dates = list(cache.keys())
     for date in dates: # convert all keys to datetime.date objects
          cache[datetime.datetime.strptime(date, DATE_FORMAT).date()] = cache.pop(date)
-
     # update the cache with more recent + older entries
     max_span = max([value['span'] for value in BUDGET.values()])
     start_date = END_DATE - datetime.timedelta(days=max_span)
+    cache_cfe = {}
+    cache_grd = {}
     if not cache.keys(): # empty cache
         print('initial fetch: {} {}'.format(start_date, END_DATE))
-        cache = scrape_amazon_expenses(config, start_date, END_DATE)
+        cache_cfe = scrape_amazon_expenses(config, config.amazon_username_cfe, config.amazon_password_cfe, start_date, END_DATE)        
+        cache_grd = scrape_amazon_expenses(config, config.amazon_username_grd, config.amazon_password_grd, start_date, END_DATE)
     else:
         max_cache = max(cache.keys()) - datetime.timedelta(days=UNCACHE)
         if END_DATE > max_cache:
             print('head fetch: {} {}'.format(max_cache + datetime.timedelta(days=1), END_DATE)) 
-            cache.update(scrape_amazon_expenses(config, max_cache + datetime.timedelta(days=1), END_DATE))
+            cache_cfe = scrape_amazon_expenses(config, config.amazon_username_cfe, config.amazon_password_cfe, max_cache + datetime.timedelta(days=1), END_DATE)
+            cache_grd = scrape_amazon_expenses(config, config.amazon_username_grd, config.amazon_password_grd, max_cache + datetime.timedelta(days=1), END_DATE)
         else:
-            print('no heads to fetch')
-        min_cache = min(cache.keys())
-        if start_date < min_cache:
-            print('tail fetch: {} {}'.format(start_date, min_cache - datetime.timedelta(days=1)))
-            cache.update(scrape_amazon_expenses(config, start_date, min_cache - datetime.timedelta(days=1)))
-        else:
-            print('no tails to fetch')
+            min_cache = min(cache.keys())
+            if start_date < min_cache:
+                print('tail fetch: {} {}'.format(start_date, min_cache - datetime.timedelta(days=1)))
+                cache_cfe = scrape_amazon_expenses(config, config.amazon_username_cfe, config.amazon_password_cfe, start_date, min_cache - datetime.timedelta(days=1))
+                cache_grd = scrape_amazon_expenses(config, config.amazon_username_grd, config.amazon_password_grd, start_date, min_cache - datetime.timedelta(days=1))
+    # merge grd and cfe
+    grd_and_cfe_dates = set(cache_grd.keys()).union(cache_cfe.keys())
+    for date in grd_and_cfe_dates:
+        cfe_expenses = cache_cfe.get(date, [])
+        grd_expenses = cache_grd.get(date, [])
+        cache[date] = cfe_expenses + grd_expenses
     # Save the updated cache back to filesystem
     if os.path.exists(AMAZON_CACHE_PATH):
         os.rename(AMAZON_CACHE_PATH, AMAZON_CACHE_PATH + '.prev')
@@ -330,7 +373,7 @@ def get_emoney_cache(config):
         min_cache = min(cache.keys())
         if start_date < min_cache:
             print('tail fetch: {} {}'.format(start_date, min_cache - datetime.timedelta(days=1)))
-            cache.update(scrape_emoney_cache(config, start_date, min_cache - datetime.timedelta(days=1)))
+            cache.update(scrape_emoney_expenses(config, start_date, min_cache - datetime.timedelta(days=1)))
         else:
             print('no tails to fetch')
     # Save the updated cache back to filesystem
@@ -352,6 +395,24 @@ def get_emoney_cache(config):
 # main starts here:
 def main():
     config = load_config()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-f', '--frequency', type=int)
+    parser.add_argument('-u', '--uncache',type=int)
+    parser.add_argument('-e', '--end',type=str,help='format: yyyy-mm-dd')
+    args = parser.parse_args()
+    if args.frequency:
+        BUDGET_FREQUENCY = args.frequency
+    if args.uncache:
+        UNCACHE = args.uncache
+    if args.end:
+        END_DATE = datetime.datetime.strptime(args.end, DATE_FORMAT).date()
+    return
+
+    # print total 'yearly' budget:
+    total_budget = 0
+    for key, item in BUDGET.items():
+        total_budget += (item['limit'] / float(item['span'])) * YEAR
+    print('Total annual: {}'.format(total_budget))
     emoney_cache = get_emoney_cache(config)
     amazon_cache = get_amazon_cache(config)
     # ...analyse budget...

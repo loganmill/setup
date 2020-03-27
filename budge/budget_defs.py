@@ -14,6 +14,7 @@ YEAR = 365 * DAY
 CONFIG_PATH = os.path.expanduser('~/.budget_config.json')
 EMONEY_CACHE_PATH = os.path.expanduser('~/.emoney_cache.json')
 AMAZON_CACHE_PATH = os.path.expanduser('~/.amazon_cache.json')
+AMAZON_EXCEPTIONS_PATH = os.path.expanduser('~/.amazon_exceptions.json')
 
 # Define end date of budget, usually 'now'.
 # today() is equivalent to date.fromtimestamp(time.time())
@@ -25,7 +26,7 @@ END_DATE = datetime.date.today() - datetime.timedelta(days=1)
 
 # Define how often you run the budget app, in days.
 # This creates how much 'free space' you have for an item.
-BUDGET_FREQUENCY = 1  # Normally 1 day
+BUDGET_FREQUENCY = 0  # Normally 1 day
 
 # Define how many days of cache to 'invalidate', as more recent
 # items in emoney (amazon?) can change for up to 3 weeks after their
@@ -38,55 +39,55 @@ BUDGET = {
    'Unknown Emoney':{
      'limit':0, 'span': MONTH},
    'Alcohol & Bars':{
-      'limit':50, 'span': MONTH},
+      'limit':300, 'span': MONTH * 3},
   'Auto Service':{
-      'limit': 500 * 12, 'span': MONTH},
+      'limit': 500 * 6, 'span': MONTH * 6},
   'Books':{
-      'limit': 100, 'span': MONTH},
+      'limit': 47*3, 'span': MONTH * 3},
   'Business (consultants, accountants)':{
-      'limit': 28, 'span': MONTH},
-  'Cash':{
-      'limit': 150, 'span': MONTH},
+      'limit': 45 * 6, 'span': MONTH * 6},
+  'Cash/ATM':{
+      'limit': 200, 'span': MONTH*3},
   'Charity':{
-      'limit':42, 'span': MONTH},
+      'limit':500, 'span': MONTH * 6},
   'Clothing':{
-      'limit':200, 'span': MONTH},
+      'limit':75 * 6, 'span': MONTH * 6},
   'Counseling':{
       'limit':165, 'span': MONTH},
   'Dentist':{
-      'limit': 470, 'span': MONTH},
+      'limit': 2400, 'span': MONTH * 6},
   'Doctor':{
-      'limit': 481,
-      'span': MONTH},
+      'limit': 3230,
+      'span': MONTH * 6},
   'Eye Doctor':{
-      'limit': 100,
-      'span': MONTH},
+      'limit': 250,
+      'span': MONTH * 6},
   'Drugstore':{
-      'limit': 150, 'span': MONTH},
+      'limit': 130, 'span': MONTH},
   'Energy, Gas & Electric':{
       'limit':217, 'span': MONTH},
   'Electronics & Software':{
-      'limit':138, 'span': MONTH},
+      'limit':150*4, 'span': MONTH*4},
   'Entertainment':{
-      'limit':148, 'span': MONTH},
+      'limit':130, 'span': MONTH},
   'Movies, DVDs & Music':{
-      'limit': 160, 'span': MONTH},
+      'limit': 135, 'span': MONTH},
   'Fast Food & Convenience':{
       'limit':168, 'span': MONTH},
   'Federal Tax':{
-      'limit': 467, 'span': MONTH},
+      'limit': 0, 'span': MONTH},
   'Gas & Fuel':{
-      'limit':133, 'span': MONTH},
+      'limit':140, 'span': MONTH},
   'Gifts':{
-      'limit':200, 'span': MONTH},
+      'limit':360, 'span': MONTH},
   'Groceries':{
       'limit':1400, 'span': MONTH},
   'Hair & Nails':{
-      'limit':71, 'span': MONTH},
+      'limit':79 * 2, 'span': MONTH * 2},
   'Home Improvement/Maintenance':{
-      'limit':879, 'span': MONTH},
+      'limit':879*6, 'span': MONTH*6},
   'Insurance':{
-      'limit': 262, 'span': MONTH},
+      'limit': 270*6, 'span': MONTH*6},
   'Interest Income':{
       'limit': 0, 'span': MONTH},
   'Income':{
@@ -94,44 +95,46 @@ BUDGET = {
   'Investment Savings':{
       'limit': 0, 'span': MONTH},
   'Kids':{
-      'limit': 1500, 'span': MONTH},
-  'Merchandise/Misc':{
-      'limit': 361, 'span': MONTH},
+      'limit': 1400*4, 'span': MONTH*4},
+  #'Merchandise/Misc':{
+  #    'limit': 361, 'span': MONTH},
   'Mortgage':{
       'limit':4373, 'span': MONTH},
   'Movies & Music':{
-      'limit':0, 'span': MONTH},
+      'limit':135, 'span': MONTH},
   'Restaurants/Dining':{
-      'limit':0, 'span': MONTH},
+      'limit':200*3, 'span': MONTH*3},
   'Parental Travel':{
-      'limit':200, 'span':MONTH},
+      'limit':200*3, 'span':MONTH*3},
   'Parking & Tolls':{
       'limit':78, 'span': MONTH},
   'Pets':{
-      'limit':74,   'span': MONTH},
+      'limit':44*3,   'span': MONTH*3},
   'Phone, Internet & Cable':{
       'limit':382, 'span': MONTH},
   'Public Transport':{
       'limit':19, 'span': MONTH},
   'Restaurants/Dining':{
-      'limit':250, 'span': MONTH},
+      'limit':200*3, 'span': MONTH*3},
   'Service Fee':{
       'limit':10, 'span': MONTH},
   'Shipping & Handling':{
-      'limit': 34, 'span': MONTH},
+      'limit': 21, 'span': MONTH},
   'Sports & Hobbies':{
-      'limit': 143, 'span': MONTH},
+      'limit': 70*6, 'span': MONTH*6},
   'State Tax':{
       'limit': 0, 'span': MONTH},
   'Tax preparation':{
-      'limit': 72, 'span': MONTH},
+      'limit': 72*12, 'span': YEAR},
   'Travel & Vacation':{
-      'limit':500, 'span': MONTH},
+      'limit':300*6, 'span': MONTH*6},
+  'Unclassified':{
+      'limit':0, 'span':MONTH*4},
   'Veterinary':{
-      'limit':75, 'span': MONTH},
+      'limit':55*6, 'span': MONTH*6},
   'Water':{
-      'limit':141, 'span': MONTH},
-   # unbudgeted catefories from emoney:
+      'limit':200, 'span': MONTH},
+   # unbudgeted categories from emoney:
   'Rental Car':{
       'limit':0, 'span': MONTH},
   'Credit Card Payment':{
@@ -143,10 +146,35 @@ BUDGET = {
   
 AMAZON_CATEGORIES = {
     'OUTDOOR_RECREATION_PRODUCT':'Sports & Hobbies',
-    'BEAUTY':'Merchandise/Misc',
+    'SPORTING_GOODS':'Sports & Hobbies',
+    'ABIS_BOOK': 'Gifts',
+    'BEAUTY':'Drugstore',
+    'GROCERY':'Groceries',
+    'CELLULAR_PHONE_CASE':'Electronics & Software',
+    'HEADPHONES':'Electronics & Software',
+    'CABLE_OR_ADAPTER':'Electronics & Software',        
+    'CHARGING_ADAPTER':'Electronics & Software',        
+    'CONSUMER_ELECTRONICS':'Electronics & Software',
+    'SPEAKERS':'Electronics & Software',
+    'STICKER_DECAL':'Electronics & Software',
+    'BACKPACK':'Sports & Hobbies',                
+    'PANTS':'Clothing',
+    'HOME':'Home Improvement/Maintenance',
+    'OUTDOOR_LIVING':'Home Improvement/Maintenance',
+    'HOME_LIGHTING_AND_LAMPS':'Gifts',
+    'LUGGAGE':'Travel & Vacation',    
+    'TEA':'Groceries',
+    'PANTRY':'Groceries',
+    'WALLET':'Clothing',
+    'PET_FOOD':'Pets',
     'PERSONAL_COMPUTER':'Electronics & Software',
+    'HEALTH_PERSONAL_CARE':'Drugstore',
+    'LAB_SUPPLY':'Drugstore',
+    'PERSONAL_CARE_APPLIANCE':'Drugstore',
     'TUNER':'Electronics & Software',
+    'KITCHEN':'Home Improvement/Maintenance',
     'HARDWARE':'Home Improvement/Maintenance',
+    'ELECTRONIC_ADAPTER':'Electronics & Software',
     'ELECTRONIC_COMPONENT':'Electronics & Software',
     'POWER_SUPPLIES_OR_PROTECTION':'Electronics & Software',
     'WIRELESS_ACCESSORY':'Electronics & Software',
