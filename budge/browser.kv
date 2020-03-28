@@ -46,21 +46,42 @@
     size_hint_y: None
     orientation: 'vertical'
     height: 100
-
-ScrollView:
-    on_parent: if self.parent: app.populate(expense_layout)
-    do_scroll_x: False
-    canvas.before:
+    known_category: True
+    canvas:
         Color:
-            rgb: 1,1,1
+            rgba: (0,0,0,0) if self.known_category else (.8,0,0,1)
         Rectangle:
             size: self.size
             pos: self.pos
 
+BoxLayout:
+    orientation: 'vertical'
     BoxLayout:
-        spacing: 20
-        orientation: 'vertical'
         size_hint_y: None
-        on_children: self.height = sum([child.height+self.spacing for child in self.children])
-        id: expense_layout    
+        height: 40
+        orientation: 'horizontal'
+        padding: 0,5,20,5
+        Widget:
+        Button:
+            text: 'Save'
+            size_hint_x: None
+            width: 100
+            on_press: app.write_amazon_exceptions()
+
+    ScrollView:
+        on_parent: if self.parent: app.populate(expense_layout)
+        do_scroll_x: False
+        canvas.before:
+            Color:
+                rgb: 1,1,1
+            Rectangle:
+                size: self.size
+                pos: self.pos
+    
+        BoxLayout:
+            spacing: 20
+            orientation: 'vertical'
+            size_hint_y: None
+            on_children: self.height = sum([child.height+self.spacing for child in self.children])
+            id: expense_layout    
 

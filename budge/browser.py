@@ -6,6 +6,7 @@ from kivy.uix.dropdown import DropDown
 from kivy.uix.label import Label
 from kivy.uix.popup import Popup
 from kivy.uix.behaviors import ButtonBehavior
+from kivy.properties import BooleanProperty
 from kivy.clock import Clock
 import json
 import pdb
@@ -33,11 +34,16 @@ class ExpenseItem(BoxLayout):
 
 class Expense(ButtonBehavior, BoxLayout):
 
-    def __init__(self, date, expense, *args, **kwargs):
+    known_category = BooleanProperty('False')
+
+    def __init__(self, date, expense, known_category, *args, **kwargs):
         super(Expense, self).__init__(*args, **kwargs)
         self.height = len(EXPENSE_KEYS) * 25
         self.expense = expense
         self.category_label = None
+        self.known_category = known_category
+
+
         for key,value in expense.items():
            if key in EXPENSE_KEYS:
                item = ExpenseItem(key, str(value))
@@ -53,7 +59,7 @@ class Expense(ButtonBehavior, BoxLayout):
         def set_category(button):
             self.expense['Category'] = button.text
             self.category_label.text = button.text
-            print('category: {}'.format(button.text))
+            self.known_category = True
             popup.dismiss()
 
         for category in BUDGET.keys():
@@ -82,7 +88,24 @@ class BrowserApp(App):
         except:
             print('Missing (or corrupt) AMAZON CACHE, "{}", using empty file'.format(AMAZON_CACHE_PATH))
             self.amazon_cache = {}
-            
+        try:
+            with open(AMAZON_EXCEPTIONS_PATH) as f:
+                self.amazon_exceptions = json.load(f)
+        except:
+            print('Missing (or corrupt) AMAZON EXCEPTIONS, "{}", using empty file'.format(AMAZON_EXCEPTIONS_PATH))
+            self.amazon_exceptions = {}
+
+    def write_amazon_exceptions(self, *args):
+        # todo: prefer date/time based backups
+        if os.path.exists(AMAZON_EXCEPTIONS_PATH + '.prev'):
+            os.rename(AMAZON_EXCEPTIONS_PATH + '.prev', AMAZON_CACHE_PATH + '.prev1')
+        if os.path.exists(AMAZON_EXCEPTIONS_PATH):
+            os.rename(AMAZON_EXCEPTIONS_PATH, AMAZON_CACHE_PATH + '.prev')
+        try:
+            with open(AMAZON_EXCEPTIONS_PATH,'w+') as f:
+                json.dump(self.amazon_exceptions, f)
+        except:
+            print('Failed to write AMAZON EXCEPTIONS, "{}"'.format(AMAZON_EXCEPTIONS_PATH))
 
     def populate(self, expense_layout):
 
@@ -95,7 +118,13 @@ class BrowserApp(App):
                     continue
                 expense_layout.add_widget(DateLabel(text=date))
                 for expense in expenses:
-                    expense_layout.add_widget(Expense(date, expense))
+                    category = expense['Category']
+                    id = expense['Order ID']
+                    if id in self.amazon_exceptions:
+                        category = expense['Category'] = self.amazon_exceptions.get(id)
+                    elif category in AMAZON_CATEGORIES:
+                        category = expense['Category'] = AMAZON_CATEGORIES[category]
+                    expense_layout.add_widget(Expense(date, expense, category in BUDGET))
             expense_layout.add_widget(Label())
             expense_layout.parent.scroll_to(expense_layout.children[-1])
 

@@ -82,20 +82,13 @@ def compute_budget(config, emoney_cache, amazon_cache):
                        amount /= 2.0
                 totals[category] = totals.get(category, 0.0) + amount
 
-    # AMAZON_EXCEPTIONS_PATH has same format as AMAZON_CACHE_PATH, but
-    # is hand-generated. Only 'Order ID' and 'Category' keys need be
-    # defined (others are ignored). If an item in AMAZON_CACHE_PATH
-    # matches date and order id, the EXCEPTION's Category overrides
-    # that in the CACHE.
+    # AMAZON_EXCEPTIONS_PATH has format { Order ID': 'Category'}
     try:
         with open(AMAZON_EXCEPTIONS_PATH) as f:
             amazon_exceptions = json.load(f)
     except:
         print('Missing (or corrupt) AMAZON EXCEPTIONS, "{}", using empty file'.format(AMAZON_EXCEPTIONS_PATH))
         amazon_exceptions = {}
-    dates = list(amazon_exceptions.keys())
-    for date in dates: # convert all keys to datetime.date objects
-         amazon_exceptions[datetime.datetime.strptime(date, DATE_FORMAT).date()] = amazon_exceptions.pop(date)
 
     for date, expenses in amazon_cache.items():
         days_exceptions = amazon_exceptions.get(date, [])
@@ -103,10 +96,10 @@ def compute_budget(config, emoney_cache, amazon_cache):
         for expense in expenses:
             category = expense['Category']
             # translate amazon category, if possible
-            if expense['Order ID'] in exceptions_map:
-                category = exceptions_map[expense['Order ID']]
-            elif expense['Shipping Address City'] != 'Louisville': # assume shipping
-                category = 'Gifts' # to other cities are gifts
+            if expense['Order ID'] in amazon_exceptions:
+                category = amazon_exceptions[expense['Order ID']]
+            #elif expense['Shipping Address City'] != 'Louisville': # assume shipping
+            #    category = 'Gifts' # to other cities are gifts
             elif category in AMAZON_CATEGORIES: # try to 'translate' category
                 category = AMAZON_CATEGORIES[category]
             elif category not in BUDGET:
@@ -291,7 +284,7 @@ def scrape_emoney_expenses(config, start_date, end_date):
     return expenses
 
 
-def get_amazon_cache(config):
+def get_amazon_cache(config, no_fetch):
     # load the cache file
     try:
         with open(AMAZON_CACHE_PATH) as f:
@@ -302,6 +295,8 @@ def get_amazon_cache(config):
     dates = list(cache.keys())
     for date in dates: # convert all keys to datetime.date objects
          cache[datetime.datetime.strptime(date, DATE_FORMAT).date()] = cache.pop(date)
+    if no_fetch:
+        return cache
     # update the cache with more recent + older entries
     max_span = max([value['span'] for value in BUDGET.values()])
     start_date = END_DATE - datetime.timedelta(days=max_span)
@@ -345,7 +340,7 @@ def get_amazon_cache(config):
     return cache
 
   
-def get_emoney_cache(config):
+def get_emoney_cache(config, no_fetch):
     # load the cache file
     try:
         with open(EMONEY_CACHE_PATH) as f:
@@ -356,7 +351,8 @@ def get_emoney_cache(config):
     dates = list(cache.keys())
     for date in dates: # convert all keys to datetime.date objects
          cache[datetime.datetime.strptime(date, DATE_FORMAT).date()] = cache.pop(date)
-
+    if no_fetch:
+      return cache
     # update the cache with more recent + older entries
     max_span = max([value['span'] for value in BUDGET.values()])
     start_date = END_DATE - datetime.timedelta(days=max_span)
@@ -399,22 +395,26 @@ def main():
     parser.add_argument('-f', '--frequency', type=int)
     parser.add_argument('-u', '--uncache',type=int)
     parser.add_argument('-e', '--end',type=str,help='format: yyyy-mm-dd')
+    parser.add_argument('-n', '--no-fetch',action='store_true')
     args = parser.parse_args()
+    # we could have a no-fetch flag, ensuring we only work with local stuff
+
+    if args.no_fetch:
+        no_fetch = True
     if args.frequency:
         BUDGET_FREQUENCY = args.frequency
     if args.uncache:
         UNCACHE = args.uncache
     if args.end:
         END_DATE = datetime.datetime.strptime(args.end, DATE_FORMAT).date()
-    return
 
     # print total 'yearly' budget:
     total_budget = 0
     for key, item in BUDGET.items():
         total_budget += (item['limit'] / float(item['span'])) * YEAR
     print('Total annual: {}'.format(total_budget))
-    emoney_cache = get_emoney_cache(config)
-    amazon_cache = get_amazon_cache(config)
+    emoney_cache = get_emoney_cache(config, no_fetch)
+    amazon_cache = get_amazon_cache(config, no_fetch)
     # ...analyse budget...
     compute_budget(config, emoney_cache, amazon_cache)
     return
