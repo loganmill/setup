@@ -1,6 +1,7 @@
 from collections import namedtuple
 import datetime
 import os
+import sys
 
 DATE_FORMAT = '%Y-%m-%d'
 
@@ -9,12 +10,25 @@ DATE_FORMAT = '%Y-%m-%d'
 DAY = 1
 WEEK = 7 * DAY
 MONTH = DAY * 30
+THREE_MONTHS = MONTH * 3
+SIX_MONTHS = MONTH * 6
 YEAR = 365 * DAY
 
-CONFIG_PATH = os.path.expanduser('~/.budget_config.json')
-EMONEY_CACHE_PATH = os.path.expanduser('~/.emoney_cache.json')
-AMAZON_CACHE_PATH = os.path.expanduser('~/.amazon_cache.json')
-AMAZON_EXCEPTIONS_PATH = os.path.expanduser('~/.amazon_exceptions.json')
+# For testing:
+THREE_MONTHS = SIX_MONTHS = YEAR = MONTH
+
+BUDGET_DIR = os.path.expanduser('~/.budget')
+BUDGET_DIR = os.path.abspath(BUDGET_DIR)        
+
+CONFIG_PATH = os.path.join(BUDGET_DIR, 'config.json')
+EMONEY_CACHE_PATH = os.path.join(BUDGET_DIR, 'emoney_cache.json')
+AMAZON_CACHE_PATH = os.path.join(BUDGET_DIR,'amazon_cache.json')
+AMAZON_EXCEPTIONS_PATH = os.path.join(BUDGET_DIR, 'amazon_exceptions.json')
+ARCHIVE_DIR = os.path.join(BUDGET_DIR, 'archive/')
+
+if not os.path.exists(ARCHIVE_DIR):
+    os.makedirs(ARCHIVE_DIR)
+
 
 # Define end date of budget, usually 'now'.
 # today() is equivalent to date.fromtimestamp(time.time())
@@ -34,40 +48,40 @@ BUDGET_FREQUENCY = 0  # Normally 1 day
 UNCACHE =  0 # Normally 21 days
 
 BUDGET = {
+   'Stepper':{
+     'limit':0, 'span': 2*MONTH},
    'Unknown Amazon':{
      'limit':0, 'span': MONTH},
    'Unknown Emoney':{
      'limit':0, 'span': MONTH},
    'Alcohol & Bars':{
-      'limit':300, 'span': MONTH * 3},
+      'limit':300, 'span': THREE_MONTHS},
   'Auto Service':{
-      'limit': 500 * 6, 'span': MONTH * 6},
+      'limit': 500 * 12, 'span': YEAR},
   'Books':{
-      'limit': 47*3, 'span': MONTH * 3},
+      'limit': 47*3, 'span': THREE_MONTHS},
   'Business (consultants, accountants)':{
-      'limit': 45 * 6, 'span': MONTH * 6},
+      'limit': 45 * 6, 'span': SIX_MONTHS},
   'Cash/ATM':{
-      'limit': 200, 'span': MONTH*3},
+      'limit': 200, 'span':THREE_MONTHS},
   'Charity':{
-      'limit':500, 'span': MONTH * 6},
+      'limit':500, 'span': SIX_MONTHS},
   'Clothing':{
-      'limit':75 * 6, 'span': MONTH * 6},
+      'limit':75 * 6, 'span': SIX_MONTHS},
   'Counseling':{
       'limit':165, 'span': MONTH},
   'Dentist':{
-      'limit': 2400, 'span': MONTH * 6},
+      'limit': 2400, 'span': SIX_MONTHS},
   'Doctor':{
-      'limit': 3230,
-      'span': MONTH * 6},
+      'limit': 3230, 'span': SIX_MONTHS},
   'Eye Doctor':{
-      'limit': 250,
-      'span': MONTH * 6},
+      'limit': 250, 'span': SIX_MONTHS},
   'Drugstore':{
       'limit': 130, 'span': MONTH},
   'Energy, Gas & Electric':{
       'limit':217, 'span': MONTH},
   'Electronics & Software':{
-      'limit':150*4, 'span': MONTH*4},
+      'limit':150*3, 'span': THREE_MONTHS},
   'Entertainment':{
       'limit':130, 'span': MONTH},
   'Movies, DVDs & Music':{
@@ -83,11 +97,11 @@ BUDGET = {
   'Groceries':{
       'limit':1400, 'span': MONTH},
   'Hair & Nails':{
-      'limit':79 * 2, 'span': MONTH * 2},
+      'limit':79 * 3, 'span': THREE_MONTHS},
   'Home Improvement/Maintenance':{
-      'limit':879*6, 'span': MONTH*6},
+      'limit':879*6, 'span': SIX_MONTHS},
   'Insurance':{
-      'limit': 270*6, 'span': MONTH*6},
+      'limit': 270*6, 'span': SIX_MONTHS},
   'Interest Income':{
       'limit': 0, 'span': MONTH},
   'Income':{
@@ -95,7 +109,7 @@ BUDGET = {
   'Investment Savings':{
       'limit': 0, 'span': MONTH},
   'Kids':{
-      'limit': 1400*4, 'span': MONTH*4},
+      'limit': 1400*3, 'span': THREE_MONTHS},
   #'Merchandise/Misc':{
   #    'limit': 361, 'span': MONTH},
   'Mortgage':{
@@ -103,35 +117,35 @@ BUDGET = {
   'Movies & Music':{
       'limit':135, 'span': MONTH},
   'Restaurants/Dining':{
-      'limit':200*3, 'span': MONTH*3},
+      'limit':200*3, 'span': THREE_MONTHS},
   'Parental Travel':{
-      'limit':200*3, 'span':MONTH*3},
+      'limit':200*3, 'span':THREE_MONTHS},
   'Parking & Tolls':{
       'limit':78, 'span': MONTH},
   'Pets':{
-      'limit':44*3,   'span': MONTH*3},
+      'limit':44*3,   'span': THREE_MONTHS},
   'Phone, Internet & Cable':{
       'limit':382, 'span': MONTH},
   'Public Transport':{
       'limit':19, 'span': MONTH},
   'Restaurants/Dining':{
-      'limit':200*3, 'span': MONTH*3},
+      'limit':200*3, 'span': THREE_MONTHS},
   'Service Fee':{
       'limit':10, 'span': MONTH},
   'Shipping & Handling':{
       'limit': 21, 'span': MONTH},
   'Sports & Hobbies':{
-      'limit': 70*6, 'span': MONTH*6},
+      'limit': 70*6, 'span': SIX_MONTHS},
   'State Tax':{
       'limit': 0, 'span': MONTH},
   'Tax preparation':{
       'limit': 72*12, 'span': YEAR},
   'Travel & Vacation':{
-      'limit':300*6, 'span': MONTH*6},
+      'limit':300*6, 'span': SIX_MONTHS},
   'Unclassified':{
-      'limit':0, 'span':MONTH*4},
+      'limit':0, 'span':MONTH},
   'Veterinary':{
-      'limit':55*6, 'span': MONTH*6},
+      'limit':55*6, 'span': SIX_MONTHS},
   'Water':{
       'limit':200, 'span': MONTH},
    # unbudgeted categories from emoney:
