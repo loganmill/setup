@@ -401,27 +401,7 @@ def update_amazon_cache(config, end_date, no_fetch):
                 filepath = create_amazon_csv(config, config.amazon_username_grd, config.amazon_password_grd, start_date, to_date)
                 if filepath:
                     merge_amazon_csv(filepath)                    
-    # merge grd and cfe
-    grd_and_cfe_dates = set(cache_grd.keys()).union(cache_cfe.keys())
-    for date in grd_and_cfe_dates:
-        cfe_expenses = cache_cfe.get(date, [])
-        grd_expenses = cache_grd.get(date, [])
-        cache[date] = cfe_expenses + grd_expenses
-    # Save the updated cache back to filesystem
-    if os.path.exists(AMAZON_CACHE_PATH):
-        os.rename(AMAZON_CACHE_PATH, AMAZON_CACHE_PATH + '.prev')
-    with open(AMAZON_CACHE_PATH, 'w+') as f:
-        f.write('{')
-        items_knt = 0 ; items_limit = len(cache)
-        for date, items in cache.items():
-           f.write('\n\n"' + datetime.date.strftime(date, DATE_FORMAT) + '":\n')
-           json.dump(items, f, indent=2)
-           items_knt += 1
-           if items_knt != items_limit:
-               f.write(',')
-        f.write('\n}\n')
     return cache
-
   
 def update_emoney_cache(config, no_fetch):
     # load the cache file

@@ -58,12 +58,20 @@ BoxLayout:
     orientation: 'vertical'
     BoxLayout:
         size_hint_y: None
-        height: 40
+        height: 50
         orientation: 'horizontal'
         padding: 0,5,20,5
         Widget:
         Button:
+            text: 'Unknown'
+            size_hint_x: None
+            width: 100
+            on_press: app.scroll_to_unknown_expense(self)
+
+        Button:
+            on_parent: app.save_button = self
             text: 'Save'
+            disabled: True
             size_hint_x: None
             width: 100
             on_press: app.write_amazon_exceptions()

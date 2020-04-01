@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from kivy.app import App
+from kivy.core.window import Window
 from kivy.uix.button import Button
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.dropdown import DropDown
@@ -42,8 +43,6 @@ class Expense(ButtonBehavior, BoxLayout):
         self.expense = expense
         self.category_label = None
         self.known_category = known_category
-
-
         for key,value in expense.items():
            if key in EXPENSE_KEYS:
                item = ExpenseItem(key, str(value))
@@ -57,9 +56,13 @@ class Expense(ButtonBehavior, BoxLayout):
         popup = None
         
         def set_category(button):
-            self.expense['Category'] = button.text
+            app = App.get_running_app()
+            app.amazon_exceptions[self.expense['Order ID']] = \
+                self.category_label.text = \
+                self.expense['Category'] = button.text
             self.category_label.text = button.text
             self.known_category = True
+            app.save_button.disabled = False
             popup.dismiss()
 
         for category in BUDGET.keys():
@@ -76,6 +79,8 @@ class BrowserApp(App):
 
     def __init__(self, *args, **kwargs):
         super(BrowserApp, self).__init__(*args, **kwargs)
+        self.save_button = self.expense_layout = None
+        Window.bind(on_request_close=self.exit_check)
         try:
             with open(AMAZON_EXCEPTIONS_PATH) as f:
                 self.amazon_exceptions = json.load(f)
@@ -95,6 +100,25 @@ class BrowserApp(App):
             print('Missing (or corrupt) AMAZON EXCEPTIONS, "{}", using empty file'.format(AMAZON_EXCEPTIONS_PATH))
             self.amazon_exceptions = {}
 
+    def exit_check(self, *args):
+        if self.save_button.disabled:
+           return False
+        popup = Popup(title="App has unsaved changes. Really exit?", size_hint=(None, None), size=(220,140))
+        layout = BoxLayout(orientation='horizontal', padding=(10,10,10,10), spacing=10)
+        layout.add_widget(Button(text='Cancel', on_press=popup.dismiss))
+        layout.add_widget(Button(text='Exit', on_press=self.stop))
+        popup.add_widget(layout)
+        popup.open()
+        return True
+
+    def scroll_to_unknown_expense(self, *args):
+        # scroll to first unknown category
+        if self.expense_layout:
+            for child in reversed(self.expense_layout.children):
+                if isinstance(child, Expense) and not(child.known_category):
+                    self.expense_layout.parent.scroll_to(child)
+                    break
+
     def write_amazon_exceptions(self, *args):
         # todo: prefer date/time based backups
         if os.path.exists(AMAZON_EXCEPTIONS_PATH + '.prev'):
@@ -103,11 +127,13 @@ class BrowserApp(App):
             os.rename(AMAZON_EXCEPTIONS_PATH, AMAZON_CACHE_PATH + '.prev')
         try:
             with open(AMAZON_EXCEPTIONS_PATH,'w+') as f:
-                json.dump(self.amazon_exceptions, f)
+                json.dump(self.amazon_exceptions, f, indent=2)
+            self.save_button.disabled = True
         except:
             print('Failed to write AMAZON EXCEPTIONS, "{}"'.format(AMAZON_EXCEPTIONS_PATH))
 
     def populate(self, expense_layout):
+        self.expense_layout = expense_layout
 
         def load(delta):
             dates = list(self.amazon_cache.keys())
@@ -125,7 +151,6 @@ class BrowserApp(App):
                     elif category in AMAZON_CATEGORIES:
                         category = expense['Category'] = AMAZON_CATEGORIES[category]
                     expense_layout.add_widget(Expense(date, expense, category in BUDGET))
-            expense_layout.add_widget(Label())
             expense_layout.parent.scroll_to(expense_layout.children[-1])
 
         Clock.schedule_once(load, .1)
