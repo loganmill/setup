@@ -49,7 +49,7 @@ UNCACHE =  0 # Normally 21 days
 
 BUDGET = {
    'Stepper':{
-     'limit':0, 'span': 2*MONTH},
+     'limit':0, 'span': 3*MONTH},
    'Unknown Amazon':{
      'limit':0, 'span': MONTH},
    'Unknown Emoney':{

@@ -15,6 +15,13 @@ from selenium.common.exceptions import NoSuchElementException
 import sys
 import time
 
+
+errors = [] # array of strings to collect, report errors
+
+def message(str, ex=False):
+   print(str)
+   errors.append(str)
+
 class wait_for_page_load(object):
 
     MAX_WAIT = 20 # seconds
@@ -36,12 +43,13 @@ class wait_for_page_load(object):
                return True 
            else: 
                time.sleep(0.1) 
+       message('Timeout waiting for page load')
        raise Exception('Timeout waiting for page load')
 
 
 def load_config():
     if not os.path.exists(CONFIG_PATH):
-        print('Creating config "{}", edit this file and restart program'.format(CONFIG_PATH))
+        message('Creating config "{}", edit this file and restart program'.format(CONFIG_PATH))
         with open(CONFIG_PATH, 'w+') as f:
             f.write(
             '{ "emoney_url": "https://wealth.emaplan.com/ema/SignIn",\n' + 
@@ -64,12 +72,15 @@ def compute_budget(config, emoney_cache, amazon_cache):
     for date, expenses in emoney_cache.items():
         for expense in expenses:
             category, description = expense['Category'], expense['Description']
+            #if category == 'date marker':
+            #    print('date marker found')
+            #    continue
             if category == 'Amazon':
                 continue # should appear in amazon_cache
             if description in['AMZN MKTP US', 'AMAZON.COM']:
                 continue ; # These should have category as 'AMAZON', but just in case...
             if category not in BUDGET:
-                print('Unknwon Emoney category: {}'.format(category))
+                message('Unknwon Emoney category: {}'.format(category))
                 category = 'Unknown Emoney'
             if date >= END_DATE - datetime.timedelta(
                 days=BUDGET[category]['span']) + budget_frequency:
@@ -85,7 +96,7 @@ def compute_budget(config, emoney_cache, amazon_cache):
         with open(AMAZON_EXCEPTIONS_PATH) as f:
             amazon_exceptions = json.load(f)
     except:
-        print('Missing (or corrupt) AMAZON EXCEPTIONS, "{}", using empty file'.format(AMAZON_EXCEPTIONS_PATH))
+        message('Missing (or corrupt) AMAZON EXCEPTIONS, "{}", using empty file'.format(AMAZON_EXCEPTIONS_PATH))
         amazon_exceptions = {}
 
     for date, expenses in amazon_cache.items():
@@ -101,7 +112,7 @@ def compute_budget(config, emoney_cache, amazon_cache):
             elif category in AMAZON_CATEGORIES: # try to 'translate' category
                 category = AMAZON_CATEGORIES[category]
             elif category not in BUDGET:
-                print('Unknown Amazon category: {}'.format(category))
+                message('Unknown Amazon category: {}'.format(category))
                 category = 'Unknown Amazon'
             if date >= END_DATE - datetime.timedelta(
                 days=BUDGET[category]['span']) + budget_frequency:
@@ -128,7 +139,7 @@ def scrape_emoney_spending(config, start_date, end_date):
     driver = webdriver.Chrome('/usr/bin/chromedriver')
     try: 
         # Print how many days we'll fetch from emoney:
-        print(start_date_range, end_date_range)
+        message('Scraping emoney from {} to {}'.format(start_date_range, end_date_range))
         with wait_for_page_load(driver):
             driver.get(config.emoney_url)
             username = driver.find_element_by_id('Username')
@@ -169,7 +180,6 @@ def scrape_emoney_spending(config, start_date, end_date):
             if new_height == last_height:
                break
             last_height = new_height 
-        print('...scrolled table')
         # parse table into dict, keyed by date object, with values a list of all expenses
         # incurred on that date.
 
@@ -183,17 +193,18 @@ def scrape_emoney_spending(config, start_date, end_date):
                 expenses_for_date = expenses.get(expense_date, [])
                 expenses_for_date.append(expense_item)
                 expenses[expense_date] = expenses_for_date
+         # ensure start_date_range and end_date_range are in expenses
+        if start_date not in expenses:
+            expenses[start_date] = []
+        if end_date not in expenses:
+            expenses[end_date] = []
     except: # NoSuchElementException:
-        date = start_date
-        day = datetime.timedelta(days=1)
-        while date <= end_date:
-            print('No transactions for {} (or scraping failure)'.format(date))
-            expenses[date] = []
-            date += day
+         message('No EMoney transactions for {} - {} (or scraping failure)'.format(start_date, end_date))
     driver.quit()
     return expenses
 
 
+"""
 def merge_amazon_csv(filepath):
     # parse given csv_file, then merge it into amazon cache,
     # replacing any items with identical Order Id's in the cache.
@@ -216,19 +227,17 @@ def merge_amazon_csv(filepath):
                expense_item = dict(zip(columns, item))
                expense_date  = datetime.datetime.strptime(expense_item.pop('Order Date'),"%m/%d/%y").date() # mm/dd/yy
                expenses_for_date = expenses.get(expense_date, [])
-               if expense_item['Item Total']:  # There will rows with 'Item Total' == '', to indicate (start, end) of date range
-                   expense_item['Item Total'] = float(sub(r'[^\d\-.]', '', expense_item['Item Total']))
-                   expenses_for_date.append(expense_item)
+               expense_item['Item Total'] = float(sub(r'[^\d\-.]', '', expense_item['Item Total']))
+               expenses_for_date.append(expense_item)
                expenses[expense_date] = expenses_for_date
     except Exception as ex:
-        pdb.set_trace()
-        print('Exception loading amazon csv file: {}\n{}'.format(filepath, ex))
+        message('Exception loading amazon csv file: {}\n{}'.format(filepath, ex))
         return False
     try:
         with open(AMAZON_CACHE_PATH) as f:
             cache = json.load(f)
     except:
-        print('Missing (or corrupt) AMAZON cache "{}", using empty cache'.format(AMAZON_CACHE_PATH))
+        message('Missing (or corrupt) AMAZON cache "{}", using empty cache'.format(AMAZON_CACHE_PATH))
         cache = {}
     # convert keys (str) to date
     dates = list(cache.keys())
@@ -254,7 +263,7 @@ def merge_amazon_csv(filepath):
                f.write(',')
         f.write('\n}\n')
     return cache
-
+"""
 
 def create_amazon_csv(config, username, password, start_date, end_date):
     #  If date set to jan 15 2020 -> feb 15 2020, the generated
@@ -315,7 +324,6 @@ def create_amazon_csv(config, username, password, start_date, end_date):
         report_day_end.select_by_value('{}'.format(end_day))  #'1' to '30' or whatever
         report_year_end = Select(driver.find_element_by_id('report-year-end'))
         report_year_end.select_by_value('{}'.format(end_year))  #'2020'  or whatever
-
         # generate new report
         report_confirm_button = driver.find_element_by_id('report-confirm')
         report_confirm_button.click()
@@ -326,31 +334,128 @@ def create_amazon_csv(config, username, password, start_date, end_date):
         total_wait += 1.0
         if os.path.exists(csv_file_path):
             driver.quit()
-            # Copy file to a unique filepath within the ARCHIVE,
-            # adding empty entries for start_date and end_date to
-            # ensure that the file's range is available
-            timestamp = str(int(time.time())) 
+            # move file to ARCHIVE_DIR, prepend username-- to filename
             archive_file_path = os.path.join(ARCHIVE_DIR,
-                os.path.join('{}-{}'.format(timestamp, csv_file_name)))
-            with open(csv_file_path, 'r') as src:
-                header = None
-                with open(archive_file_path, 'w+') as dst:
-                    reader = csv.reader(src)
-                    writer = csv.writer(dst)
-                    for row in reader:
-                        if header is None:
-                            header = row
-                        writer.writerow(row)
-                    empty_row = ['' for column in header]
-                    empty_row[0] = start_date.strftime('%m/%d/%y')
-                    writer.writerow(empty_row)
-                    empty_row[0] = end_date.strftime('%m/%d/%y')
-                    writer.writerow(empty_row)
-            print('created amazon csv: {}'.format(archive_file_path))
+                '{}--{}'.format(username, csv_file_name))
+            os.rename(csv_file_path, archive_file_path)
             return archive_file_path
+    message('Failed to created amazon csv for {}'.format(archive_file_path, username))
     driver.quit()
     return None
 
+def merge_amazon_csv(csv_file_path, username=None):
+    pdb.set_trace()
+    if not(os.path.exists(csv_file_path)):
+        message('Can\'t load csv file: {}'.format(csv_file_path))
+        return False
+    csv_file_name = os.path.basename(csv_file_path)
+    if '--' in csv_file_name:
+        username, csv_file_name = csv_file_name.split('--')
+    else:
+        archive_file_path = os.path.join(ARCHIVE_DIR,
+            '{}--{}'.format(username, csv_file_name))
+        os.rename(csv_file_path, archive_file_path)
+        csv_file_path = archive_file_path
+    # file format: dd-MMM-YYYY_to_dd-MMM-YYYY.csv
+    from_date = datetime.datetime.strptime(csv_file_name[0:11], '%d-%b-%Y').date()
+    to_date = datetime.datetime.strptime(csv_file_name[15:26], '%d-%b-%Y').date()    
+    to_date = to_date - datetime.timedelta(days=1)
+    expenses = {}
+    username = None
+    # Load the amazon csv file, converting to our cache format ({ datetime.date: [ {expense_items}, {expense_items}....})
+    with open(csv_file_path, 'r') as src:
+        reader = csv.reader(src)
+        columns = None
+        for row in reader: # first row is column names
+            if columns is None:
+                columns = row
+                continue
+            if len(row) < 30:
+                # If no data for time period, Amazon returns a single row with
+                # 1 column containing 'No data found for this time period'. Normally, there
+                # are 36 columns, and 'Item Total' (column 30) is the last we need.
+                # Skip row if we don't have at least 30 columns.
+                continue
+            expense_item = dict(zip(columns, row))
+            expense_item['Item Total'] = float(sub(r'[^\d\-.]', '', expense_item['Item Total'])) # want as float
+            expense_date  = datetime.datetime.strptime(expense_item.pop('Order Date'),"%m/%d/%y").date() # mm/dd/yy
+            expenses_for_date = expenses.get(expense_date, [])
+            expenses_for_date.append(expense_item)
+            expenses[expense_date] = expenses_for_date
+    # Merge amazon csv items into amazon cache
+    try:
+        with open(AMAZON_CACHE_PATH) as f:
+            cache = json.load(f)
+    except:
+        message('Missing (or corrupt) AMAZON cache "{}", using empty cache'.format(AMAZON_CACHE_PATH))
+        cache = {}
+    for date in list(cache.keys()): # convert all keys to datetime.date objects
+         cache[datetime.datetime.strptime(date, DATE_FORMAT).date()] = cache.pop(date)
+    for date, expenses_for_date in expenses.items():
+        cached_expenses_for_date = cache.get(date, [])
+        cached_expenses_by_order_id = {expense['Order ID']:expense for expense in cached_expenses_for_date}
+        expenses_by_order_id = {expense['Order ID']:expense for expense in expenses_for_date} 
+        cached_expenses_by_order_id.update(expenses_by_order_id)
+        cache[date] = list(cached_expenses_by_order_id.values())
+    # Add date markers for start/end date, if no entries for user on that date
+    user_key = 'Ordering Customer Email'
+    marker_expense = {column:'' for column in columns if column is not 'Order Date'}
+    marker_expense['Category'] = 'date-marker'
+    marker_expense[user_key] = username
+    for date in (from_date, to_date):
+        date_expenses = cache.get(date, [])
+        date_users = {expense[user_key] for expense in date_expenses if user_key in expense}
+        if username not in date_users:  # must add a date-marker
+            marker_expense['Order ID'] = str(time.time()) # simply unique id
+            date_expenses.append(marker_expense)
+            cache[date] = date_expenses
+    # Save the updated cache back to filesystem
+    if os.path.exists(AMAZON_CACHE_PATH):
+        os.rename(AMAZON_CACHE_PATH, AMAZON_CACHE_PATH + '.prev')
+    with open(AMAZON_CACHE_PATH, 'w+') as f:
+        f.write('{')
+        items_knt = 0 ; items_limit = len(cache)
+        for date, items in cache.items():
+           f.write('\n\n"' + datetime.date.strftime(date, DATE_FORMAT) + '":\n')
+           json.dump(items, f, indent=2)
+           items_knt += 1
+           if items_knt != items_limit:
+               f.write(',')
+        f.write('\n}\n')
+    return cache
+
+
+"""
+def archive_amazon_csv(csv_file_path, username, start_date, end_date):
+    # Copy file to a unique filepath within the ARCHIVE,
+    # adding empty entries for start_date and end_date to
+    # ensure that the file's range is available
+    timestamp = str(int(time.time())) 
+    csv_file_name = os.path.basename(csv_file_path)
+    archive_file_path = os.path.join(ARCHIVE_DIR,
+        os.path.join('{}-{}-{}'.format(username, timestamp, csv_file_name)))
+    with open(csv_file_path, 'r') as src:
+        header = None
+        with open(archive_file_path, 'w+') as dst:
+            reader = csv.reader(src)
+            writer = csv.writer(dst)
+            for row in reader:
+                if header is None:
+                    header = row
+                writer.writerow(row)
+            # Add empty markers for start date/end date
+            marker_row = ['' for column in header]
+            marker_row[0] = start_date.strftime('%m/%d/%y')
+            marker_row[1] = str(time.time())  # 'Order ID' column
+            marker_row[3] = 'date-marker'  # 'Category' column
+            marker_row[17] = username # 'Ordering Customer Email' column
+            marker_row[29] = 0  # 'Item Total' column, AD
+            writer.writerow(marker_row)
+            marker_row[0] = end_date.strftime('%m/%d/%y')
+            writer.writerow(marker_row)
+    message('Created amazon csv: {} for {}'.format(archive_file_path, username))
+    return archive_file_path
+"""
 
 def update_amazon_cache(config, end_date, no_fetch):
     # Update the amazon cache, ensuring that it has entries for
@@ -359,7 +464,7 @@ def update_amazon_cache(config, end_date, no_fetch):
         with open(AMAZON_CACHE_PATH) as f:
             cache = json.load(f)
     except:
-        print('Missing (or corrupt) AMAZON cache "{}", using empty cache'.format(AMAZON_CACHE_PATH))
+        message('Missing (or corrupt) AMAZON cache "{}", using empty cache'.format(AMAZON_CACHE_PATH))
         cache = {}
     dates = list(cache.keys())
     for date in dates: # convert all keys to datetime.date objects
@@ -369,38 +474,45 @@ def update_amazon_cache(config, end_date, no_fetch):
     # update the cache with more recent + older entries
     max_span = max([value['span'] for value in BUDGET.values()])
     start_date = end_date - datetime.timedelta(days=max_span)
-    cache_cfe = {}
-    cache_grd = {}
     if not cache.keys(): # empty cache
-        print('initial fetch: {} {}'.format(start_date, end_date))
+        message('Initial amazon fetch: {} {} {}'.format(config.amazon_password_cfe, start_date, end_date))
         filepath = create_amazon_csv(config, config.amazon_username_cfe, config.amazon_password_cfe, start_date, end_date)
-        if filepath:
-            merge_amazon_csv(filepath)
+        merge_amazon_csv(filepath) if filepath else message('Initial Amazon fetch for cfe failed.')
         filepath = create_amazon_csv(config, config.amazon_username_grd, config.amazon_password_grd, start_date, end_date)
-        if filepath:
-            merge_amazon_csv(filepath)
+        merge_amazon_csv(filepath) if filepath else message('Initial Amazon fetch for grd failed.')
     else:
-        max_cache = max(cache.keys()) - datetime.timedelta(days=UNCACHE)
-        if end_date > max_cache:
-            from_date = max_cache + datetime.timedelta(days=1)
-            print('head fetch: {} {}'.format(from_date, end_date))
+        min_cfe = min_grd = datetime.date(year=2055,month=1,day=1)
+        max_cfe = max_grd = datetime.date(year=1990,month=1,day=1)        
+        for date, expenses in cache.items():
+            for expense in expenses:
+               if expense['Ordering Customer Email'] == config.amazon_username_cfe:
+                   min_cfe = min(date, min_cfe)
+                   max_cfe = max(date, max_cfe)
+               elif expense['Ordering Customer Email'] == config.amazon_username_grd:                   
+                   min_grd = min(date, min_grd)
+                   max_grd = max(date, max_grd)
+        max_cfe = max_cfe - datetime.timedelta(days=UNCACHE)
+        if end_date > max_cfe:
+            from_date = max_cfe + datetime.timedelta(days=1)
+            message('Fetching Amazon head for cfe: {} {}'.format(from_date, end_date))
             filepath = create_amazon_csv(config, config.amazon_username_cfe, config.amazon_password_cfe, from_date, end_date)
-            if filepath:
-                merge_amazon_csv(filepath)
-            filepath = create_amazon_csv(config, config.amazon_username_grd, config.amazon_password_grd, max_cache + datetime.timedelta(days=1), end_date)
-            if filepath:
-                merge_amazon_csv(filepath)
-        else:
-            min_cache = min(cache.keys())
-            if start_date < min_cache:
-                to_date = min_cache - datetime.timedelta(days=1)
-                print('tail fetch: {} {}'.format(start_date, to_date))
-                filepath = cache_cfe = create_amazon_csv(config, config.amazon_username_cfe, config.amazon_password_cfe, start_date, to_date)
-                if filepath:
-                    merge_amazon_csv(filepath)                    
-                filepath = create_amazon_csv(config, config.amazon_username_grd, config.amazon_password_grd, start_date, to_date)
-                if filepath:
-                    merge_amazon_csv(filepath)                    
+            merge_amazon_csv(filepath) if filepath else message('Amazon head fetch for cfe failed.')
+        max_grd = max_grd - datetime.timedelta(days=UNCACHE)
+        if end_date > max_grd:
+            from_date = max_grd + datetime.timedelta(days=1)
+            message('Fetching Amazon head for grd: {} {}'.format(from_date, end_date))
+            filepath = create_amazon_csv(config, config.amazon_username_grd, config.amazon_password_grd, max_grd, end_date)
+            merge_amazon_csv(filepath) if filepath else message('Amazon head fetch for grd failed.')
+        if start_date < min_cfe:
+            to_date = min_cfe - datetime.timedelta(days=1)
+            message('Fetching Amazon tail for cfe: {} {}'.format(start_date, to_date))
+            filepath = create_amazon_csv(config, config.amazon_username_cfe, config.amazon_password_cfe, start_date, to_date)
+            merge_amazon_csv(filepath) if filepath else message('Amazon tail fetch for cfe failed.')
+        if start_date < min_grd:
+            to_date = min_grd - datetime.timedelta(days=1)
+            message('Fetching Amazon tail for grd: {} {}'.format(start_date, to_date))
+            filepath = create_amazon_csv(config, config.amazon_username_grd, config.amazon_password_grd, start_date, to_date)
+            merge_amazon_csv(filepath) if filepath else message('Amazon tail fetch for grd failed.')
     return cache
   
 def update_emoney_cache(config, no_fetch):
@@ -409,7 +521,7 @@ def update_emoney_cache(config, no_fetch):
         with open(EMONEY_CACHE_PATH) as f:
             cache = json.load(f)
     except:
-        print('Missing (or corrupt) EMONEY cache "{}", using empty cache'.format(EMONEY_CACHE_PATH))
+        message('Missing (or corrupt) EMONEY cache "{}", using empty cache'.format(EMONEY_CACHE_PATH))
         cache = {}
     dates = list(cache.keys())
     for date in dates: # convert all keys to datetime.date objects
@@ -420,21 +532,17 @@ def update_emoney_cache(config, no_fetch):
     max_span = max([value['span'] for value in BUDGET.values()])
     start_date = END_DATE - datetime.timedelta(days=max_span)
     if not cache.keys(): # empty cache
-        print('initial fetch: {} {}'.format(start_date, END_DATE))
+        message('Initial EMoney fetch: {} {}'.format(start_date, END_DATE))
         cache = scrape_emoney_spending(config, start_date, END_DATE)
     else:
         max_cache = max(cache.keys()) - datetime.timedelta(days=UNCACHE)
         if END_DATE > max_cache:
-            print('head fetch: {} {}'.format(max_cache + datetime.timedelta(days=1), END_DATE)) 
+            message('EMoney head fetch: {} {}'.format(max_cache + datetime.timedelta(days=1), END_DATE)) 
             cache.update(scrape_emoney_spending(config, max_cache + datetime.timedelta(days=1), END_DATE))
-        else:
-            print('no heads to fetch')
         min_cache = min(cache.keys())
         if start_date < min_cache:
-            print('tail fetch: {} {}'.format(start_date, min_cache - datetime.timedelta(days=1)))
+            message('EMoney tail fetch: {} {}'.format(start_date, min_cache - datetime.timedelta(days=1)))
             cache.update(scrape_emoney_spending(config, start_date, min_cache - datetime.timedelta(days=1)))
-        else:
-            print('no tails to fetch')
     # Save the updated cache back to filesystem
     if os.path.exists(EMONEY_CACHE_PATH):
         os.rename(EMONEY_CACHE_PATH, EMONEY_CACHE_PATH + '.prev')
@@ -458,7 +566,8 @@ def main():
     parser.add_argument('-f', '--frequency', type=int)
     parser.add_argument('-u', '--uncache',type=int)
     parser.add_argument('-e', '--end',type=str,help='format: yyyy-mm-dd')
-    parser.add_argument('-ma','--merge_amazon_csv',type=str)
+    parser.add_argument('-ma','--merge_amazon_csv',nargs=2,type=str)
+    parser.add_argument('-aa','--archive_amazon_csv',nargs=4,type=str, help='-aa filename username startdate enddate')
     parser.add_argument('-n', '--no_fetch',action='store_true')
     args = parser.parse_args()
     # we could have a no-fetch flag, ensuring we only work with local stuff
@@ -474,10 +583,21 @@ def main():
     else:
         end_date = END_DATE
 
+    '''
+    if args.archive_amazon_csv:
+        pdb.set_trace()
+        filestr,username,startstr,endstr = args.archive_amazon_csv
+        filepath = os.path.abspath(os.path.expanduser(filestr))
+        start_date = datetime.datetime.strptime(startstr, DATE_FORMAT).date()
+        end_date = datetime.datetime.strptime(endstr, DATE_FORMAT).date()
+        archive_amazon_csv(filepath, username, start_date, end_date)
+        return
+    '''
+
     if args.merge_amazon_csv:
-        filepath = os.path.expanduser(args.merge_amazon_csv)
-        filepath = os.path.abspath(filepath)
-        merge_amazon_csv(filepath)
+        file_path,username = args.merge_amazon_csv
+        file_path = os.path.abspath(os.path.expanduser(file_path))
+        merge_amazon_csv(file_path, username)
         return
 
     # print total 'yearly' budget:
