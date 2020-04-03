@@ -15,7 +15,7 @@ SIX_MONTHS = MONTH * 6
 YEAR = 365 * DAY
 
 # For testing:
-THREE_MONTHS = SIX_MONTHS = YEAR = MONTH
+#THREE_MONTHS = SIX_MONTHS = YEAR = MONTH
 
 BUDGET_DIR = os.path.expanduser('~/.budget')
 BUDGET_DIR = os.path.abspath(BUDGET_DIR)        
@@ -25,9 +25,13 @@ EMONEY_CACHE_PATH = os.path.join(BUDGET_DIR, 'emoney_cache.json')
 AMAZON_CACHE_PATH = os.path.join(BUDGET_DIR,'amazon_cache.json')
 AMAZON_EXCEPTIONS_PATH = os.path.join(BUDGET_DIR, 'amazon_exceptions.json')
 ARCHIVE_DIR = os.path.join(BUDGET_DIR, 'archive/')
+REPORTS_DIR = os.path.join(BUDGET_DIR, 'reports/')
 
 if not os.path.exists(ARCHIVE_DIR):
     os.makedirs(ARCHIVE_DIR)
+if not os.path.exists(REPORTS_DIR):
+    os.makedirs(REPORTS_DIR)
+
 
 
 # Define end date of budget, usually 'now'.
@@ -48,8 +52,8 @@ BUDGET_FREQUENCY = 0  # Normally 1 day
 UNCACHE =  0 # Normally 21 days
 
 BUDGET = {
-   'Stepper':{
-     'limit':0, 'span': 3*MONTH},
+   #'Stepper':{
+   #  'limit':0, 'span': 12*MONTH},
    'Unknown Amazon':{
      'limit':0, 'span': MONTH},
    'Unknown Emoney':{
@@ -81,7 +85,7 @@ BUDGET = {
   'Energy, Gas & Electric':{
       'limit':217, 'span': MONTH},
   'Electronics & Software':{
-      'limit':150*3, 'span': THREE_MONTHS},
+      'limit':150*6, 'span': SIX_MONTHS},
   'Entertainment':{
       'limit':130, 'span': MONTH},
   'Movies, DVDs & Music':{
@@ -142,7 +146,7 @@ BUDGET = {
       'limit': 72*12, 'span': YEAR},
   'Travel & Vacation':{
       'limit':300*6, 'span': SIX_MONTHS},
-  'Unclassified':{
+  'Unclassified':{    # this could be excluded from budget totals...includes money transfer
       'limit':0, 'span':MONTH},
   'Veterinary':{
       'limit':55*6, 'span': SIX_MONTHS},

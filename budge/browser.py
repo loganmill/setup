@@ -65,13 +65,14 @@ class Expense(ButtonBehavior, BoxLayout):
             app.save_button.disabled = False
             popup.dismiss()
 
-        for category in BUDGET.keys():
+        
+        for category in sorted(BUDGET.keys()):
             widget = CategoryButton(text=str(category), on_press=set_category)
             dropdown.add_widget(widget)
         popup = Popup(
             title=self.expense['Title'],
             content=dropdown,
-            size_hint=(.5,.5))
+            size_hint=(.5,.9))
         popup.open()
 
                
@@ -145,6 +146,8 @@ class BrowserApp(App):
                 expense_layout.add_widget(DateLabel(text=date))
                 for expense in expenses:
                     category = expense['Category']
+                    if category == 'date-marker':
+                        continue
                     id = expense['Order ID']
                     if id in self.amazon_exceptions:
                         category = expense['Category'] = self.amazon_exceptions.get(id)
