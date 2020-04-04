@@ -3,6 +3,7 @@ import argparse
 from collections import namedtuple
 import csv
 import datetime
+import hashlib
 import json
 from budget_defs import *
 import os
@@ -201,7 +202,7 @@ def scrape_emoney_spending(config, start_date, end_date):
                 expenses_for_date = expenses.get(expense_date, [])
                 expenses_for_date.append(expense_item)
                 expenses[expense_date] = expenses_for_date
-         # ensure start_date_range and end_date_range are in expenses
+        # ensure start_date_range and end_date_range are in expenses
         if start_date not in expenses:
             expenses[start_date] = []
         if end_date not in expenses:
@@ -210,68 +211,6 @@ def scrape_emoney_spending(config, start_date, end_date):
          report('No EMoney transactions for {} - {} (or scraping failure)'.format(start_date, end_date))
     driver.quit()
     return expenses
-
-
-"""
-def merge_amazon_csv(filepath):
-    # parse given csv_file, then merge it into amazon cache,
-    # replacing any items with identical Order Id's in the cache.
-    # returns False on error.
-    expenses = {}
-    try:
-        with open(os.path.join(filepath)) as f:
-           reader = csv.reader(f)
-           columns = None
-           for item in reader:
-               if columns is None:
-                   columns = item
-                   continue
-               if len(item) < 30:
-                   # If no data for time period, Amazon returns a single row with
-                   # 1 column containing 'No data found for this time period'. Normally, there
-                   # are 36 columns, and 'Item Total' (column 30) is the last we need.
-                   # Skip row if we don't have at least 30 columns.
-                   continue
-               expense_item = dict(zip(columns, item))
-               expense_date  = datetime.datetime.strptime(expense_item.pop('Order Date'),"%m/%d/%y").date() # mm/dd/yy
-               expenses_for_date = expenses.get(expense_date, [])
-               expense_item['Item Total'] = float(sub(r'[^\d\-.]', '', expense_item['Item Total']))
-               expenses_for_date.append(expense_item)
-               expenses[expense_date] = expenses_for_date
-    except Exception as ex:
-        report('Exception loading amazon csv file: {}\n{}'.format(filepath, ex))
-        return False
-    try:
-        with open(AMAZON_CACHE_PATH) as f:
-            cache = json.load(f)
-    except:
-        report('Missing (or corrupt) AMAZON cache "{}", using empty cache'.format(AMAZON_CACHE_PATH))
-        cache = {}
-    # convert keys (str) to date
-    dates = list(cache.keys())
-    for date in dates: # convert all keys to datetime.date objects
-         cache[datetime.datetime.strptime(date, DATE_FORMAT).date()] = cache.pop(date)
-    for date, expenses_for_date in expenses.items():
-        cached_expenses_for_date = cache.get(date, [])
-        cached_expenses_by_order_id = {expense['Order ID']:expense for expense in cached_expenses_for_date}
-        expenses_by_order_id = {expense['Order ID']:expense for expense in expenses_for_date} 
-        cached_expenses_by_order_id.update(expenses_by_order_id)
-        cache[date] = list(cached_expenses_by_order_id.values())
-    # Save the updated cache back to filesystem
-    if os.path.exists(AMAZON_CACHE_PATH):
-        os.rename(AMAZON_CACHE_PATH, AMAZON_CACHE_PATH + '.prev')
-    with open(AMAZON_CACHE_PATH, 'w+') as f:
-        f.write('{')
-        items_knt = 0 ; items_limit = len(cache)
-        for date, items in cache.items():
-           f.write('\n\n"' + datetime.date.strftime(date, DATE_FORMAT) + '":\n')
-           json.dump(items, f, indent=2)
-           items_knt += 1
-           if items_knt != items_limit:
-               f.write(',')
-        f.write('\n}\n')
-    return cache
-"""
 
 def create_amazon_csv(config, username, password, start_date, end_date):
     #  If date set to jan 15 2020 -> feb 15 2020, the generated
@@ -393,7 +332,7 @@ def merge_amazon_csv(csv_file_path, username=None):
         with open(AMAZON_CACHE_PATH) as f:
             cache = json.load(f)
     except:
-        report('Missing (or corrupt) AMAZON cache "{}", using empty cache'.format(AMAZON_CACHE_PATH))
+        report('Missing (or corrupt) Amazon cache "{}", using empty cache'.format(AMAZON_CACHE_PATH))
         cache = {}
     for date in list(cache.keys()): # convert all keys to datetime.date objects
          cache[datetime.datetime.strptime(date, DATE_FORMAT).date()] = cache.pop(date)
@@ -432,38 +371,6 @@ def merge_amazon_csv(csv_file_path, username=None):
     return cache
 
 
-"""
-def archive_amazon_csv(csv_file_path, username, start_date, end_date):
-    # Copy file to a unique filepath within the ARCHIVE,
-    # adding empty entries for start_date and end_date to
-    # ensure that the file's range is available
-    timestamp = str(int(time.time())) 
-    csv_file_name = os.path.basename(csv_file_path)
-    archive_file_path = os.path.join(ARCHIVE_DIR,
-        os.path.join('{}-{}-{}'.format(username, timestamp, csv_file_name)))
-    with open(csv_file_path, 'r') as src:
-        header = None
-        with open(archive_file_path, 'w+') as dst:
-            reader = csv.reader(src)
-            writer = csv.writer(dst)
-            for row in reader:
-                if header is None:
-                    header = row
-                writer.writerow(row)
-            # Add empty markers for start date/end date
-            marker_row = ['' for column in header]
-            marker_row[0] = start_date.strftime('%m/%d/%y')
-            marker_row[1] = str(time.time())  # 'Order ID' column
-            marker_row[3] = 'date-marker'  # 'Category' column
-            marker_row[17] = username # 'Ordering Customer Email' column
-            marker_row[29] = 0  # 'Item Total' column, AD
-            writer.writerow(marker_row)
-            marker_row[0] = end_date.strftime('%m/%d/%y')
-            writer.writerow(marker_row)
-    report('Created amazon csv: {} for {}'.format(archive_file_path, username))
-    return archive_file_path
-"""
-
 def update_amazon_cache(config, end_date, no_fetch):
     # Update the amazon cache, ensuring that it has entries for
     # the date range from end_date - (max_span in budget) to end_date.
@@ -471,7 +378,7 @@ def update_amazon_cache(config, end_date, no_fetch):
         with open(AMAZON_CACHE_PATH) as f:
             cache = json.load(f)
     except:
-        report('Missing (or corrupt) AMAZON cache "{}", using empty cache'.format(AMAZON_CACHE_PATH))
+        report('Missing (or corrupt) Amazon cache "{}", using empty cache'.format(AMAZON_CACHE_PATH))
         cache = {}
     dates = list(cache.keys())
     for date in dates: # convert all keys to datetime.date objects
@@ -525,11 +432,12 @@ def update_amazon_cache(config, end_date, no_fetch):
   
 def update_emoney_cache(config, no_fetch):
     # load the cache file
+
     try:
         with open(EMONEY_CACHE_PATH) as f:
             cache = json.load(f)
-    except:
-        report('Missing (or corrupt) EMONEY cache "{}", using empty cache'.format(EMONEY_CACHE_PATH))
+    except exception as ex:
+        report('Missing (or corrupt) Emoney cache "{}", using empty cache'.format(EMONEY_CACHE_PATH))
         cache = {}
     dates = list(cache.keys())
     for date in dates: # convert all keys to datetime.date objects
@@ -554,11 +462,25 @@ def update_emoney_cache(config, no_fetch):
     # Save the updated cache back to filesystem
     if os.path.exists(EMONEY_CACHE_PATH):
         os.rename(EMONEY_CACHE_PATH, EMONEY_CACHE_PATH + '.prev')
+
+    def make_emoney_order_id(date, expense):
+        # Identical expenses for a given date will have same hash, but
+        # that's OK for our purposes, i.e. assigning Categories.
+        hash_items = [str(value) for value in expense.values()] # all strings now...
+        hash_items.sort()
+        hash_key = ''.join(hash_items)
+        hash_key += date
+        return hashlib.md5(bytes(hash_key,'utf-8')).hexdigest()
+
     with open(EMONEY_CACHE_PATH, 'w+') as f:
         f.write('{')
         items_knt = 0 ; items_limit = len(cache)
         for date, items in cache.items():
-           f.write('\n\n"' + datetime.date.strftime(date, DATE_FORMAT) + '":\n')
+           date_str = datetime.date.strftime(date, DATE_FORMAT)
+           for item in items: # Create an (almost) unique Order ID's by hashing...
+               if not 'Order ID' in item:
+                   item['Order ID'] = make_emoney_order_id(date_str, item) 
+           f.write('\n\n"' + date_str + '":\n')
            json.dump(items, f, indent=2)
            items_knt += 1
            if items_knt != items_limit:

@@ -146,7 +146,7 @@ BUDGET = {
       'limit': 72*12, 'span': YEAR},
   'Travel & Vacation':{
       'limit':300*6, 'span': SIX_MONTHS},
-  'Unclassified':{    # this could be excluded from budget totals...includes money transfer
+  'Unclassified':{ # this could be excluded from budget totals...includes money transfer
       'limit':0, 'span':MONTH},
   'Veterinary':{
       'limit':55*6, 'span': SIX_MONTHS},

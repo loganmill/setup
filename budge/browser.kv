@@ -46,10 +46,10 @@
     size_hint_y: None
     orientation: 'vertical'
     height: 100
-    known_category: True
+    is_known_category: True
     canvas:
         Color:
-            rgba: (0,0,0,0) if self.known_category else (.8,0,0,1)
+            rgba: (0,0,0,0) if self.is_known_category else (.8,0,0,1)
         Rectangle:
             size: self.size
             pos: self.pos
@@ -61,6 +61,13 @@ BoxLayout:
         height: 50
         orientation: 'horizontal'
         padding: 0,5,20,5
+        Spinner:
+            on_parent: if self.parent: app.operation_spinner = self
+            size_hint_x: None
+            width: 140
+            text: 'Amazon'
+            values: 'Amazon', 'Emoney', 'Categories'
+            on_text: app.populate()
         Widget:
         Button:
             text: 'Unknown'
@@ -77,7 +84,8 @@ BoxLayout:
             on_press: app.write_amazon_exceptions()
 
     ScrollView:
-        on_parent: if self.parent: app.populate(expense_layout)
+        on_parent: if self.parent: app.expense_layout = expense_layout
+        #on_parent: if self.parent: app.populate(expense_layout)
         do_scroll_x: False
         canvas.before:
             Color:
