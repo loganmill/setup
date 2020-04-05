@@ -1,5 +1,25 @@
 
-<CategoryButton@Button>:
+<GrayWidget@Widget>:
+    canvas:
+        Color:
+            rgb: .8,.8,.8
+        Rectangle:
+            size: self.size
+            pos: self.pos
+
+
+<CategorySelectorButton@ToggleButton>:
+    size_hint_y: None
+    height:30
+    text_size: self.size
+    halign: 'center'
+    valign: 'center'
+    background_color: (.8,.8,.8,1) if self.state == 'normal' else (1,1,1,1)
+    color: 0,0,0,1
+    background_normal: ''
+    background_down: ''
+
+<CategorySetterButton@Button>:
     size_hint_y: None
     height:30
     background_color: 1,1,1,1
@@ -68,6 +88,28 @@ BoxLayout:
             text: 'Amazon'
             values: 'Amazon', 'Emoney', 'Categories'
             on_text: app.populate()
+        Label:
+            text: 'Last:'
+            valign: 'center'
+            padding: 10,0
+            halign: 'right'
+            text_size: self.size
+            size_hint: None, None
+            size: 80,40
+        Spinner:
+            on_parent: if self.parent: app.range_spinner = self
+            size_hint_x: None
+            width: 40
+            text: '1'
+            values: [str(x + 1) for x in range(12)]
+            on_text: app.set_range(int(self.text))
+        Label:
+            text: 'months'
+            text_size: self.size
+            valign: 'center'
+            size_hint: None, None
+            padding: 10,0
+            size: 100,40
         Widget:
         Button:
             text: 'Unknown'

@@ -11,13 +11,18 @@ from kivy.uix.popup import Popup
 from kivy.uix.behaviors import ButtonBehavior
 from kivy.properties import BooleanProperty
 from kivy.clock import Clock
+import copy
 import json
 import pdb
 
 from budget_defs import *
 
-AMAZON_EXPENSE_KEYS = ['Order ID', 'Title', 'Category', 'Item Total','Shipping Address City','Buyer Name']
-EMONEY_EXPENSE_KEYS = ['Order ID', 'Description', 'Account', 'Category', 'Amount']
+AMAZON_EXPENSE_KEYS = ['Title', 'Category', 'Item Total','Shipping Address City','Buyer Name', 'Order ID']
+EMONEY_EXPENSE_KEYS = ['Description', 'Account', 'Category', 'Amount', 'Order ID']
+
+
+class GrayWidget(Widget):
+    pass
 
 class ExpenseLabel(Label):
     pass
@@ -25,8 +30,12 @@ class ExpenseLabel(Label):
 class DateLabel(Label):
     pass
 
-class CategoryButton(Button):
+class CategorySetterButton(Button):
     pass
+
+class CategorySelectorButton(ToggleButton):
+    pass
+
 
 class ExpenseItem(BoxLayout):
 
@@ -40,7 +49,7 @@ class Expense(ButtonBehavior, BoxLayout):
 
     known_category = BooleanProperty('False')
 
-    def __init__(self, date, expense_keys, expense, is_known_category, *args, **kwargs):
+    def __init__(self, expense_keys, expense, is_known_category, *args, **kwargs):
         super(Expense, self).__init__(*args, **kwargs)
         self.height = len(expense_keys) * 25
         self.expense = expense
@@ -70,7 +79,7 @@ class Expense(ButtonBehavior, BoxLayout):
             popup.dismiss()
         
         for category in sorted(BUDGET.keys()):
-            widget = CategoryButton(text=str(category), on_press=set_category)
+            widget = CategorySetterButton(text=str(category), on_press=set_category)
             dropdown.add_widget(widget)
         popup = Popup(
             title=expense['Title'] if 'Title' in expense else expense['Description'],
@@ -84,31 +93,66 @@ class BrowserApp(App):
     def __init__(self, *args, **kwargs):
         super(BrowserApp, self).__init__(*args, **kwargs)
         self.save_button = self.expense_layout = self.operation_spinner = None
+        from_date = (datetime.date.today() - datetime.timedelta(days=MONTH))
+        self.from_date = datetime.datetime.strftime(from_date, DATE_FORMAT)
         Window.bind(on_request_close=self.exit_check)
-        # Load amazon expenses
+        self.load_cache()
+        Clock.schedule_once(self.populate, 0.1)
+
+    def load_cache(self):
+        # Load amazon exceptions
+        from_date = self.from_date
+        amazon_exceptions = {}
         try:
             with open(AMAZON_EXCEPTIONS_PATH) as f:
-                self.amazon_exceptions = json.load(f)
+                amazon_exceptions = json.load(f)
         except:
             print('Missing (or corrupt) AMAZON EXCEPTIONS, "{}", using empty file'.format(AMAZON_EXCEPTIONS_PATH))
-            self.amazon_exceptions = {}
+        # Load amazon cache
+        amazon_cache = amazon_cache = {}
         try:
             with open(AMAZON_CACHE_PATH) as f:
-                self.amazon_cache = json.load(f)
-            self.amazon_cache = {key:val for key,val in self.amazon_cache.items() if key > '2020-02-08' }
+                amazon_cache = json.load(f)
+            amazon_cache = {key:val for key,val in amazon_cache.items() if key >= from_date }
         except:
             print('Missing (or corrupt) AMAZON CACHE, "{}", using empty file'.format(AMAZON_CACHE_PATH))
-            self.amazon_cache = {}
+        # Apply amazon exceptions to amazon cache
+        for date, expenses in amazon_cache.items():
+            for expense in expenses:
+                category = expense['Category']
+                if category in ['date-marker']:
+                    continue
+                id = expense.get('Order ID', None)
+                if id in amazon_exceptions:
+                    expense['Category'] = amazon_exceptions.get(id)
+                elif category in AMAZON_CATEGORIES:
+                    expense['Category'] = AMAZON_CATEGORIES[category]
         # Load emoney expenses
+        emoney_cache = {}
         try:
             with open(EMONEY_CACHE_PATH) as f:
-                self.emoney_cache = json.load(f)
-            self.emoney_cache = {key:val for key,val in self.emoney_cache.items() if key > '2020-02-08'}
+                emoney_cache = json.load(f)
+            emoney_cache = {key:val for key,val in emoney_cache.items() if key > from_date}
         except:
             print('Missing (or corrupt) AMAZON CACHE, "{}", using empty file'.format(EMONEY_CACHE_PATH))
-            self.emoney_cache = {}
-        # initially, populate amazon expenses:
-        Clock.schedule_once(self.populate, 0.1)
+        # Create the category cache by 'merging' amazon and emoney category cache's
+        amazon_category_cache = copy.deepcopy(amazon_cache)
+        emoney_category_cache = copy.deepcopy(emoney_cache)
+        for date, expenses in emoney_category_cache.items():
+            if date in amazon_category_cache:
+                expenses.extend(amazon_category_cache.pop(date))
+        emoney_category_cache.update(amazon_category_cache)
+        # Now re-index by 'Category':
+        category_expenses = {}
+        for date, expenses in emoney_category_cache.items():
+            for expense in expenses:
+                category = expense.get('Category', None)
+                expense_list = category_expenses.get(category, [])
+                expense_list.append(expense)
+                category_expenses[category] = expense_list
+        self.amazon_cache = amazon_cache
+        self.emoney_cache = emoney_cache
+        self.category_expenses = category_expenses
 
     def exit_check(self, *args):
         if self.save_button.disabled:
@@ -121,59 +165,74 @@ class BrowserApp(App):
         popup.open()
         return True
 
+    def set_range(self, months):
+        from_date = (datetime.date.today() - datetime.timedelta(days=months * MONTH))
+        self.from_date = datetime.datetime.strftime(from_date, DATE_FORMAT)
+        self.load_cache()
+        self.populate()
+                                  
+
     def populate(self, *args):
         self.expense_layout.clear_widgets()
-        print('populate {} {}'.format(self.operation_spinner.text, self.expense_layout))
         operation = self.operation_spinner.text
         if operation == 'Amazon':
-            self.populate_expenses(AMAZON_CATEGORIES, AMAZON_EXPENSE_KEYS, self.amazon_cache, self.amazon_exceptions)
+            self.populate_expenses(AMAZON_CATEGORIES, AMAZON_EXPENSE_KEYS, self.amazon_cache)
         elif operation == 'Emoney':            
-            self.populate_expenses({}, EMONEY_EXPENSE_KEYS, self.emoney_cache, {})
+            self.populate_expenses({}, EMONEY_EXPENSE_KEYS, self.emoney_cache)
         elif operation == 'Categories':
             self.populate_categories({}, {})
 
     def populate_categories(self, amazon_cache, emoney_cache):
         expense_layout = self.expense_layout
         expense_layout.orientation = 'horizontal'
-        categories_layout = BoxLayout(orientation='vertical', size_hint=(None,None),
+        categories_layout = BoxLayout(orientation='vertical', size_hint=(None,1),
                                       width=300, height=30 * len(BUDGET.keys()))
+        category_expenses_layout = BoxLayout(orientation='vertical', spacing=30)
 
         def populate_category(button):
-            print(button.text)
-
-        for category in BUDGET.keys():
-            categories_layout.add_widget(ToggleButton(group='Categories', text=category,
-               size_hint_y=None,
-                   height=30,
-                   on_press=populate_category))
-        expense_layout.add_widget(categories_layout)
-        expense_layout.add_widget(Widget())        
-        
-
-
-    def populate_expenses(self, categories, keys, cache, exceptions): # AMAZON_CATEGORIES, self.amazon_cache, self.amazon_exceptions
-        dates = list(cache.keys())
-        dates.sort(reverse=True)
-        expense_layout = self.expense_layout
-        expense_layout.orientation = 'vertical'
-        for date in dates:
-            expenses = cache[date]
-            if len(expenses) == 0:
-                continue
-            expense_layout.add_widget(DateLabel(text=date))
+            category_expenses_layout.clear_widgets()
+            expenses = App.get_running_app().category_expenses.get(button.text, [])
             for expense in expenses:
                 category = expense['Category']
                 if category in ['date-marker', 'Amazon']:
                     continue
-                if exceptions:
-                    id = expense.get('Order ID', None)
-                    if id in exceptions:
-                        category = expense['Category'] = exceptions.get(id)
-                    elif category in AMAZON_CATEGORIES:
-                        category = expense['Category'] = AMAZON_CATEGORIES[category]
-                expense_layout.add_widget(Expense(date, keys, expense, category in BUDGET))
-        print(len(expense_layout.children))
-        expense_layout.parent.scroll_to(expense_layout.children[-1])
+                category_expenses_layout.add_widget(
+                    Expense(AMAZON_EXPENSE_KEYS if 'Item Total' in expense else EMONEY_EXPENSE_KEYS, expense, True))
+            category_expenses_layout.add_widget(Widget())
+
+        for category in BUDGET.keys():
+            categories_layout.add_widget(CategorySelectorButton(group='Categories', text=category,
+               size_hint_y=None,
+                   height=30,
+                   on_press=populate_category))
+        categories_layout.add_widget(GrayWidget())
+        expense_layout.add_widget(categories_layout)
+        expense_layout.add_widget(category_expenses_layout)
+
+    def populate_expenses(self, categories, keys, cache):
+        wait_popup = Popup(title='Loading data from {} to today'.format(self.from_date),
+                   content=Label(text='Please wait...'), size_hint=(None, None), size=(400, 200))
+        wait_popup.open()
+
+        def _populate_expenses(delta):
+            dates = list(cache.keys())
+            dates.sort(reverse=True)
+            expense_layout = self.expense_layout
+            expense_layout.orientation = 'vertical'
+            for date in dates:
+                expenses = cache[date]
+                if len(expenses) == 0:
+                    continue
+                expense_layout.add_widget(DateLabel(text=date))
+                for expense in expenses:
+                    category = expense['Category']
+                    if category in ['date-marker', 'Amazon']:
+                        continue
+                    expense_layout.add_widget(Expense(keys, expense, category in BUDGET))
+            expense_layout.parent.scroll_to(expense_layout.children[-1])
+            wait_popup.dismiss()
+
+        Clock.schedule_once(_populate_expenses)
         
     def scroll_to_unknown_expense(self, *args):
         # scroll to first unknown category
