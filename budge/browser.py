@@ -3,6 +3,7 @@ from kivy.app import App
 from kivy.core.window import Window
 from kivy.uix.widget import Widget
 from kivy.uix.button import Button
+from kivy.uix.togglebutton import ToggleButton
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.dropdown import DropDown
 from kivy.uix.label import Label
@@ -136,8 +137,15 @@ class BrowserApp(App):
         expense_layout.orientation = 'horizontal'
         categories_layout = BoxLayout(orientation='vertical', size_hint=(None,None),
                                       width=300, height=30 * len(BUDGET.keys()))
+
+        def populate_category(button):
+            print(button.text)
+
         for category in BUDGET.keys():
-            categories_layout.add_widget(Button(text=category, size_hint_y=None, height=30))
+            categories_layout.add_widget(ToggleButton(group='Categories', text=category,
+               size_hint_y=None,
+                   height=30,
+                   on_press=populate_category))
         expense_layout.add_widget(categories_layout)
         expense_layout.add_widget(Widget())        
         

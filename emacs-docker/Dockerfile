@@ -1,4 +1,4 @@
-FROM ubuntu:16.04
+FROM ubuntu:18.04
 MAINTAINER gdiener@cardinalpeak.com
 
 #
@@ -7,7 +7,7 @@ MAINTAINER gdiener@cardinalpeak.com
 # User account to create
 ENV USER grd
 # Email and name for git commands
-ENV USER_GIT_EMAIL gdiener@cardinalpeak.com
+ENV USER_GIT_EMAIL grd@loganmill.net
 ENV USER_GIT_NAME  Glen Diener
 
 # need libgl1-mesa-glx for emacs to run in a window
