@@ -72,9 +72,8 @@ def load_config():
         return json.load(f, object_hook=lambda d:
                       namedtuple('CONFIG', d.keys())(*d.values()))
 
-def compute_budget(config, emoney_cache, amazon_cache):
+def compute_budget(config, emoney_cache, amazon_cache, end_date, frequency):
     totals = {}
-    budget_frequency = datetime.timedelta(days=BUDGET_FREQUENCY)
     for date, expenses in emoney_cache.items():
         for expense in expenses:
             category, description = expense['Category'], expense['Description']
@@ -88,8 +87,7 @@ def compute_budget(config, emoney_cache, amazon_cache):
             if category not in BUDGET:
                 report('Unknwon Emoney category: {}'.format(category))
                 category = 'Unknown Emoney'
-            if date >= END_DATE - datetime.timedelta(
-                days=BUDGET[category]['span']) + budget_frequency:
+            if date >= end_date - datetime.timedelta(days=BUDGET[category]['span'] + frequency):
                 amount = expense['Amount']
                 if category == 'Kids':
                     if 'DERR' in description and amount > 120:
@@ -122,10 +120,13 @@ def compute_budget(config, emoney_cache, amazon_cache):
             elif category not in BUDGET:
                 report('Unknown Amazon category: {}'.format(category))
                 category = 'Unknown Amazon'
-            if date >= END_DATE - datetime.timedelta(
-                days=BUDGET[category]['span']) + budget_frequency:
+            if date >= end_date - datetime.timedelta(days=BUDGET[category]['span'] + frequency):
                 amount = expense['Item Total']
                 totals[category] = totals.get(category, 0.0) + amount
+    total_budget = 0
+    for key, item in BUDGET.items():
+        total_budget += (item['limit'] / float(item['span'])) * YEAR
+    report('Total annual budget: {}'.format(total_budget))
     reports = []
     # print sorted     
     for item in sorted(totals.keys()):
@@ -371,7 +372,7 @@ def merge_amazon_csv(csv_file_path, username=None):
     return cache
 
 
-def update_amazon_cache(config, end_date, no_fetch):
+def update_amazon_cache(config, end_date, uncache):
     # Update the amazon cache, ensuring that it has entries for
     # the date range from end_date - (max_span in budget) to end_date.
     try:
@@ -383,8 +384,6 @@ def update_amazon_cache(config, end_date, no_fetch):
     dates = list(cache.keys())
     for date in dates: # convert all keys to datetime.date objects
          cache[datetime.datetime.strptime(date, DATE_FORMAT).date()] = cache.pop(date)
-    if no_fetch:
-        return cache
     # update the cache with more recent + older entries
     max_span = max([value['span'] for value in BUDGET.values()])
     start_date = end_date - datetime.timedelta(days=max_span)
@@ -406,13 +405,13 @@ def update_amazon_cache(config, end_date, no_fetch):
                elif expense['Ordering Customer Email'] == config.amazon_username_grd:                   
                    min_grd = min(date, min_grd)
                    max_grd = max(date, max_grd)
-        max_cfe = max_cfe - datetime.timedelta(days=UNCACHE)
+        max_cfe = max_cfe - datetime.timedelta(days=uncache)
         if end_date > max_cfe:
             from_date = max_cfe + datetime.timedelta(days=1)
             report('Fetching Amazon head for cfe: {} {}'.format(from_date, end_date))
             filepath = create_amazon_csv(config, config.amazon_username_cfe, config.amazon_password_cfe, from_date, end_date)
             merge_amazon_csv(filepath) if filepath else report('Amazon head fetch for cfe failed.')
-        max_grd = max_grd - datetime.timedelta(days=UNCACHE)
+        max_grd = max_grd - datetime.timedelta(days=uncache)
         if end_date > max_grd:
             from_date = max_grd + datetime.timedelta(days=1)
             report('Fetching Amazon head for grd: {} {}'.format(from_date, end_date))
@@ -430,9 +429,8 @@ def update_amazon_cache(config, end_date, no_fetch):
             merge_amazon_csv(filepath) if filepath else report('Amazon tail fetch for grd failed.')
     return cache
   
-def update_emoney_cache(config, no_fetch):
+def update_emoney_cache(config, end_date, uncache):
     # load the cache file
-
     try:
         with open(EMONEY_CACHE_PATH) as f:
             cache = json.load(f)
@@ -442,19 +440,17 @@ def update_emoney_cache(config, no_fetch):
     dates = list(cache.keys())
     for date in dates: # convert all keys to datetime.date objects
          cache[datetime.datetime.strptime(date, DATE_FORMAT).date()] = cache.pop(date)
-    if no_fetch:
-      return cache
     # update the cache with more recent + older entries
     max_span = max([value['span'] for value in BUDGET.values()])
-    start_date = END_DATE - datetime.timedelta(days=max_span)
+    start_date = end_date - datetime.timedelta(days=max_span)
     if not cache.keys(): # empty cache
-        report('Initial EMoney fetch: {} {}'.format(start_date, END_DATE))
-        cache = scrape_emoney_spending(config, start_date, END_DATE)
+        report('Initial EMoney fetch: {} {}'.format(start_date, end_date))
+        cache = scrape_emoney_spending(config, start_date, end_date)
     else:
-        max_cache = max(cache.keys()) - datetime.timedelta(days=UNCACHE)
-        if END_DATE > max_cache:
-            report('EMoney head fetch: {} {}'.format(max_cache + datetime.timedelta(days=1), END_DATE)) 
-            cache.update(scrape_emoney_spending(config, max_cache + datetime.timedelta(days=1), END_DATE))
+        max_cache = max(cache.keys()) - datetime.timedelta(days=uncache)
+        if end_date > max_cache:
+            report('EMoney head fetch: {} {}'.format(max_cache + datetime.timedelta(days=1), end_date)) 
+            cache.update(scrape_emoney_spending(config, max_cache + datetime.timedelta(days=1), end_date))
         min_cache = min(cache.keys())
         if start_date < min_cache:
             report('EMoney tail fetch: {} {}'.format(start_date, min_cache - datetime.timedelta(days=1)))
@@ -493,40 +489,20 @@ def update_emoney_cache(config, no_fetch):
 def main():
     config = load_config()
     parser = argparse.ArgumentParser()
-    parser.add_argument('-f', '--frequency', type=int)
-    parser.add_argument('-u', '--uncache',type=int)
-    parser.add_argument('-e', '--end',type=str,help='format: yyyy-mm-dd')
+    parser.add_argument('-f', '--frequency', type=int, default=1)
+    parser.add_argument('-u', '--uncache', type=int, default=21)
     parser.add_argument('-ma','--merge_amazon_csv',nargs=2,type=str)
-    parser.add_argument('-n', '--no_fetch',action='store_true')
     args = parser.parse_args()
-    # we could have a no-fetch flag, ensuring we only work with local stuff
-    no_fetch = False
-    if args.no_fetch:
-        no_fetch = True
-    if args.frequency:
-        BUDGET_FREQUENCY = args.frequency
-    if args.uncache:
-        UNCACHE = args.uncache
-    if args.end:
-        end_date = datetime.datetime.strptime(args.end, DATE_FORMAT).date()
-    else:
-        end_date = END_DATE
-
     if args.merge_amazon_csv:
         file_path,username = args.merge_amazon_csv
         file_path = os.path.abspath(os.path.expanduser(file_path))
         merge_amazon_csv(file_path, username)
         return
-
-    # print total 'yearly' budget:
-    total_budget = 0
-    for key, item in BUDGET.items():
-        total_budget += (item['limit'] / float(item['span'])) * YEAR
-    print('Total annual budget: {}'.format(total_budget))
-    emoney_cache = update_emoney_cache(config, no_fetch)
-    amazon_cache = update_amazon_cache(config, end_date, no_fetch)
+    end_date = datetime.date.today() - datetime.timedelta(days=1)
+    emoney_cache = update_emoney_cache(config, end_date, args.uncache)
+    amazon_cache = update_amazon_cache(config, end_date, args.uncache)
     # ...analyse budget...
-    compute_budget(config, emoney_cache, amazon_cache)
+    compute_budget(config, emoney_cache, amazon_cache, end_date, args.frequency)
     return
 
 try:

@@ -1,13 +1,4 @@
 
-<GrayWidget@Widget>:
-    canvas:
-        Color:
-            rgb: .8,.8,.8
-        Rectangle:
-            size: self.size
-            pos: self.pos
-
-
 <CategorySelectorButton@ToggleButton>:
     size_hint_y: None
     height:30
@@ -36,7 +27,7 @@
     color: 0,0,0
     canvas.before:
         Color:
-            rgb: .9,.9,.9
+            rgb: .8,.8,.8
         Rectangle:
             size: self.size
             pos: self.pos
@@ -86,10 +77,10 @@ BoxLayout:
             size_hint_x: None
             width: 140
             text: 'Amazon'
-            values: 'Amazon', 'Emoney', 'Categories'
+            values: 'Amazon', 'Emoney', 'Categories', 'Budget'
             on_text: app.populate()
         Label:
-            text: 'Last:'
+            text: 'Last'
             valign: 'center'
             padding: 10,0
             halign: 'right'
@@ -123,23 +114,76 @@ BoxLayout:
             disabled: True
             size_hint_x: None
             width: 100
-            on_press: app.write_amazon_exceptions()
+            on_press: app.write_exceptions()
 
-    ScrollView:
-        on_parent: if self.parent: app.expense_layout = expense_layout
-        #on_parent: if self.parent: app.populate(expense_layout)
-        do_scroll_x: False
+    FloatLayout:
+        on_parent: if self.parent: app.layout = self
         canvas.before:
             Color:
                 rgb: 1,1,1
             Rectangle:
-                size: self.size
                 pos: self.pos
-    
+                size: self.size
+
+<ExpenseLayout@ScrollView>:
+    do_scroll_x: False
+    bar_width: 20
+    scroll_type: ['bars', 'content']
+    canvas.before:
+        Color:
+            rgb: 1,1,1
+        Rectangle:
+            size: self.size
+            pos: self.pos
+    BoxLayout:
+        spacing: 20
+        orientation: 'vertical'
+        size_hint_y: None
+        on_children: self.height = sum([child.height+self.spacing for child in self.children])
+        id: expense_list
+
+<CategoryLayout@BoxLayout>:
+    orientation: 'horizontal'
+    ScrollView:
+        size_hint_x: None
+        width: 300
         BoxLayout:
-            spacing: 20
-            orientation: 'vertical'
+            id: categories
             size_hint_y: None
-            on_children: self.height = sum([child.height+self.spacing for child in self.children])
-            id: expense_layout    
+            orientation: 'vertical'
+    BoxLayout:
+        orientation: 'vertical'
+        Label:
+            id: details
+            color: 0,0,0
+            size_hint_y: None
+            height: 40
+            halign: 'center'
+        ScrollView:
+            scroll_type: ['bars', 'content']
+            bar_width: 20
+            BoxLayout:
+                id: expenses
+                orientation: 'vertical'
+                spacing: 20
+                size_hint_y: None
+
+<BudgetLabel@Label>:
+    padding: [30, 10]
+    text_size: self.size
+    halign: 'right'
+    valign: 'center'
+    size_hint: None, None
+    size: 200,40
+    color: 0,0,0
+
+<BudgetLayout@BoxLayout>:
+    orientation: 'vertical'
+    BoxLayout:
+        orientation: 'horizontal'
+        BudgetLabel:
+            text: 'Immediate Run'
+        Button:
+            text: 'Run'
+
 

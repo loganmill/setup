@@ -22,6 +22,7 @@ BUDGET_DIR = os.path.abspath(BUDGET_DIR)
 
 CONFIG_PATH = os.path.join(BUDGET_DIR, 'config.json')
 EMONEY_CACHE_PATH = os.path.join(BUDGET_DIR, 'emoney_cache.json')
+EMONEY_EXCEPTIONS_PATH = os.path.join(BUDGET_DIR, 'emoney_exceptions.json')
 AMAZON_CACHE_PATH = os.path.join(BUDGET_DIR,'amazon_cache.json')
 AMAZON_EXCEPTIONS_PATH = os.path.join(BUDGET_DIR, 'amazon_exceptions.json')
 ARCHIVE_DIR = os.path.join(BUDGET_DIR, 'archive/')
@@ -32,24 +33,9 @@ if not os.path.exists(ARCHIVE_DIR):
 if not os.path.exists(REPORTS_DIR):
     os.makedirs(REPORTS_DIR)
 
-
-
-# Define end date of budget, usually 'now'.
-# today() is equivalent to date.fromtimestamp(time.time())
-# Examples:
-# datetime.datetime.today()
-# datetime.datetime.strptime('2019-11-19, DATE_FORMAT) 
-# datetime.datetime.fromisoformat('2019-11-19')
-END_DATE = datetime.date.today() - datetime.timedelta(days=1)
-
 # Define how often you run the budget app, in days.
 # This creates how much 'free space' you have for an item.
 BUDGET_FREQUENCY = 0  # Normally 1 day
-
-# Define how many days of cache to 'invalidate', as more recent
-# items in emoney (amazon?) can change for up to 3 weeks after their
-# posted date. 
-UNCACHE =  0 # Normally 21 days
 
 BUDGET = {
    #'Stepper':{
