@@ -59,6 +59,7 @@ class Expense(ButtonBehavior, BoxLayout):
 
     def __init__(self, expense_keys, exceptions, expense, is_known_category, *args, **kwargs):
         super(Expense, self).__init__(*args, **kwargs)
+        self.app = App.get_running_app()
         self.height = len(expense_keys) * 25
         self.exceptions = exceptions
         self.expense = expense
@@ -78,13 +79,22 @@ class Expense(ButtonBehavior, BoxLayout):
         expense = self.expense
         
         def set_category(button):
-            app = App.get_running_app()
-            self.exceptions[expense['Order ID']] = \
-                self.category_label.text = \
-                expense['Category'] = button.text
-            self.category_label.text = button.text
+            new_category = button.text
+            current_category = self.category_label.text
+            oid = expense['Order ID']
+            # Move expense to new category in category structure. Note:
+            # the expense iself.app.category_expenses is not the same object
+            # as self.expense.
+            category_expenses = self.app.category_expenses[current_category]
+            target_expense = [exp for exp in category_expenses if exp['Order ID'] == oid][0]
+            self.app.category_expenses[current_category] = \
+                    [exp for exp in category_expenses if exp['Order ID'] != oid]
+            target_expense['Category'] = new_category
+            self.app.category_expenses[new_category].append(target_expense)
+            # Set new category in expense and exceptions structure
+            self.exceptions[oid] = self.category_label.text = expense['Category'] = new_category
             self.is_known_category = True
-            app.save_button.disabled = False
+            self.app.save_button.disabled = False
             popup.dismiss()
         
         for category in sorted(BUDGET.keys()):
@@ -233,7 +243,8 @@ class BrowserApp(App):
                 is_amazon = 'Item Total' in expense  # Emoney has 'Amount'
                 expenses_list.add_widget(
                     Expense(AMAZON_EXPENSE_KEYS if is_amazon else EMONEY_EXPENSE_KEYS,
-                            self.amazon_expenses if is_amazon else self.emoney_expenses, True))
+                            self.amazon_exceptions if is_amazon else self.emoney_exceptions,
+                            expense, True))
                 total += expense['Item Total'] if 'Item Total' in expense else expense['Amount']
             expenses_list.height = sum([child.height + 20 for child in expenses_list.children])
             details_label.text = '{}: {:.2f}'.format(category, total)

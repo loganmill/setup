@@ -74,16 +74,23 @@ def load_config():
 
 def compute_budget(config, emoney_cache, amazon_cache, end_date, frequency):
     totals = {}
+
+    # AMAZON_EXCEPTIONS_PATH has format { Order ID': 'Category'}
+    emoney_exceptions = {}
+    try:
+        with open(EMONEY_EXCEPTIONS_PATH) as f:
+            emoney_exceptions = json.load(f)
+    except:
+        report('Missing (or corrupt) EMONEY EXCEPTIONS, "{}", using empty file'.format(EMONEY_EXCEPTIONS_PATH))
     for date, expenses in emoney_cache.items():
         for expense in expenses:
             category, description = expense['Category'], expense['Description']
-            #if category == 'date marker':
-            #    print('date marker found')
-            #    continue
             if category == 'Amazon':
                 continue # should appear in amazon_cache
             if description in['AMZN MKTP US', 'AMAZON.COM']:
                 continue ; # These should have category as 'AMAZON', but just in case...
+            if expense['Order ID'] in emoney_exceptions:
+                category = emoney_exceptions[expense['Order ID']]
             if category not in BUDGET:
                 report('Unknwon Emoney category: {}'.format(category))
                 category = 'Unknown Emoney'
