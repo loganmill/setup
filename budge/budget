@@ -27,6 +27,9 @@ def report(str, ex=False):
    with open(report_file_path, 'a+') as f:
       f.write(str)
       f.write('\n')
+   with open(os.path.join(BUDGET_DIR, 'report'), 'w') as f:
+      f.write(str)
+      f.write('\n')
 
 class wait_for_page_load(object):
 
@@ -515,6 +518,8 @@ def main():
 try:
     main()
 except BaseException as ex:
+    # todo: increase timeouts, retry when Timeout waiting for page load
+    # is thrown.
     import traceback
     traceback.print_exc()
     pdb.set_trace()
