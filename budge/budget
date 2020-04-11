@@ -6,6 +6,8 @@ import datetime
 import hashlib
 import json
 from budget_defs import *
+import logging
+import logging.handlers
 import os
 import pdb
 from re import sub
@@ -15,25 +17,32 @@ from selenium.webdriver.support.select import Select
 from selenium.common.exceptions import NoSuchElementException
 import sys
 import time
+import traceback
 
+DELAY=3 # extra delay to help in screen scraping
 
 report_file_name = '{}.txt'.format(
   datetime.datetime.today().strftime('%y-%b-%d_%H:%M_%a'))
 
 report_file_path = os.path.join(REPORTS_DIR, report_file_name)
 
-def report(str, ex=False):
-   print(str)
-   with open(report_file_path, 'a+') as f:
-      f.write(str)
-      f.write('\n')
-   with open(os.path.join(BUDGET_DIR, 'report'), 'w') as f:
-      f.write(str)
-      f.write('\n')
+report_notes = ''
+
+class BudgetFileHandler(logging.handlers.RotatingFileHandler):
+
+    def emit(self,record):
+       print('{} {}'.format(record.levelname, record.msg))
+       super(BudgetFileHandler, self).emit(record)
+       
+logger = logging.getLogger('budget')
+hdlr = BudgetFileHandler(filename=LOG_PATH, maxBytes=10000, backupCount=5)
+hdlr.setFormatter(logging.Formatter('%(levelname)s %(message)s'))
+logger.addHandler(hdlr)
+logger.setLevel(logging.INFO)
 
 class wait_for_page_load(object):
 
-    MAX_WAIT = 20 # seconds
+    MAX_WAIT = 30 # seconds
     
     def __init__(self, driver):
         self.driver = driver
@@ -51,14 +60,14 @@ class wait_for_page_load(object):
            if self.page_has_loaded(): 
                return True 
            else: 
-               time.sleep(0.1) 
-       report('Timeout waiting for page load')
+               time.sleep(1.0) 
+       logger.error('Timeout waiting for page load')
        raise Exception('Timeout waiting for page load')
 
 
 def load_config():
     if not os.path.exists(CONFIG_PATH):
-        report('Creating config "{}", edit this file and restart program'.format(CONFIG_PATH))
+        logger.warn('Creating config "{}", edit this file and restart program'.format(CONFIG_PATH))
         with open(CONFIG_PATH, 'w+') as f:
             f.write(
             '{ "emoney_url": "https://wealth.emaplan.com/ema/SignIn",\n' + 
@@ -76,6 +85,12 @@ def load_config():
                       namedtuple('CONFIG', d.keys())(*d.values()))
 
 def compute_budget(config, emoney_cache, amazon_cache, end_date, frequency):
+    budget_notes = ''
+    total_budget = 0
+    for key, item in BUDGET.items():
+        total_budget += (item['limit'] / float(item['span'])) * YEAR
+    msg = 'Total annual budget: {}\n'.format(total_budget)
+    budget_notes += msg
     totals = {}
 
     # AMAZON_EXCEPTIONS_PATH has format { Order ID': 'Category'}
@@ -84,7 +99,7 @@ def compute_budget(config, emoney_cache, amazon_cache, end_date, frequency):
         with open(EMONEY_EXCEPTIONS_PATH) as f:
             emoney_exceptions = json.load(f)
     except:
-        report('Missing (or corrupt) EMONEY EXCEPTIONS, "{}", using empty file'.format(EMONEY_EXCEPTIONS_PATH))
+        logger.warn('Missing (or corrupt) EMONEY EXCEPTIONS, "{}", using empty file'.format(EMONEY_EXCEPTIONS_PATH))
     for date, expenses in emoney_cache.items():
         for expense in expenses:
             category, description = expense['Category'], expense['Description']
@@ -95,7 +110,9 @@ def compute_budget(config, emoney_cache, amazon_cache, end_date, frequency):
             if expense['Order ID'] in emoney_exceptions:
                 category = emoney_exceptions[expense['Order ID']]
             if category not in BUDGET:
-                report('Unknwon Emoney category: {}'.format(category))
+                msg = 'Unknown Emoney category: {}'.format(category)
+                logger.warn(msg)
+                budget_notes += msg
                 category = 'Unknown Emoney'
             if date >= end_date - datetime.timedelta(days=BUDGET[category]['span'] + frequency):
                 amount = expense['Amount']
@@ -110,7 +127,7 @@ def compute_budget(config, emoney_cache, amazon_cache, end_date, frequency):
         with open(AMAZON_EXCEPTIONS_PATH) as f:
             amazon_exceptions = json.load(f)
     except:
-        report('Missing (or corrupt) AMAZON EXCEPTIONS, "{}", using empty file'.format(AMAZON_EXCEPTIONS_PATH))
+        logger.warn('Missing (or corrupt) AMAZON EXCEPTIONS, "{}", using empty file'.format(AMAZON_EXCEPTIONS_PATH))
         amazon_exceptions = {}
 
     for date, expenses in amazon_cache.items():
@@ -128,7 +145,9 @@ def compute_budget(config, emoney_cache, amazon_cache, end_date, frequency):
             elif category in AMAZON_CATEGORIES: # try to 'translate' category
                 category = AMAZON_CATEGORIES[category]
             elif category not in BUDGET:
-                report('Unknown Amazon category: {}'.format(category))
+                msg = 'Unknown Amazon category: {}'.format(category)
+                logger.warn(msg)
+                budget_notes += msg
                 category = 'Unknown Amazon'
             if date >= end_date - datetime.timedelta(days=BUDGET[category]['span'] + frequency):
                 amount = expense['Item Total']
@@ -136,17 +155,76 @@ def compute_budget(config, emoney_cache, amazon_cache, end_date, frequency):
     total_budget = 0
     for key, item in BUDGET.items():
         total_budget += (item['limit'] / float(item['span'])) * YEAR
-    report('Total annual budget: {}'.format(total_budget))
+
+    # Print report to stdout
     reports = []
-    # print sorted     
     for item in sorted(totals.keys()):
         limit = BUDGET[item]['limit']
         span = BUDGET[item]['span']
         total = totals[item]
         reports.append('{}: {} {:.2f}/{:.2f} {} days'.format(item.rjust(32, ' '), '***' if total > limit else '   ', total, limit, span))
-    report('-----------------------------------')
-    report('\n'.join(reports))
+    print('\n'.join(reports))
+    print('Notes:\n{}'.format(budget_notes))
 
+    # Create an html- parse-able report:
+    html = '''
+    <style>
+    table {{
+        border-spacing: 5px;
+        width: 100%;
+        border-collapse: collapse;
+        font-size: x-large;
+    }}
+    tr:nth-child(odd) {{background-color: #ddd;
+    }}
+    th {{
+        text-align: left ;
+    }}
+    .key {{
+      padding-right: 20px;
+      text-align: right;
+    }}
+    .total {{
+    }}
+    .limit {{
+    }}
+    .span {{
+    }}
+    </style>
+    <h1><center>{date}</center></h1>
+    <table>
+      <tbody>
+        <tr style="background-color:#66f">
+           <th class="key">Category</td>
+           <th>Total</th>
+           <th>Limit</th>
+           <th>Span</th>
+        </tr>
+    '''.format(
+       date=datetime.datetime.today().strftime('%a %b %d %Y  %H:%M'))
+    for item in sorted(totals.keys()):
+        total=totals[item]
+        limit=BUDGET[item]['limit']
+        span=BUDGET[item]['span']
+        html += '''
+        <tr style="color: {status}">
+            <td class="key">{key}:</td>
+            <td class="total">{total:.2f}</td>
+            <td class="limit">{limit:.2f}</td>
+            <td class="span">{span}</td>
+        </tr>'''.format(
+           status='#f00' if total > limit else '000',
+           key=item,total=total,limit=limit,span=span)
+    html += '''
+       </tbody>
+    </table>
+
+    <h1>Notes:</h1>
+    {}
+    '''.format(budget_notes.replace('\n','<br>\n'))
+
+    with open(HTML_PATH, 'w') as f:
+        f.write(html)
 
 def scrape_emoney_spending(config, start_date, end_date):
     # all expenses >= start_date and <= end_date. If start_date == end_date,
@@ -159,7 +237,7 @@ def scrape_emoney_spending(config, start_date, end_date):
     driver = webdriver.Chrome('/usr/bin/chromedriver')
     try: 
         # Print how many days we'll fetch from emoney:
-        report('Scraping emoney from {} to {}'.format(start_date_range, end_date_range))
+        logger.info('Scraping emoney from {} to {}'.format(start_date_range, end_date_range))
         with wait_for_page_load(driver):
             driver.get(config.emoney_url)
             username = driver.find_element_by_id('Username')
@@ -213,13 +291,13 @@ def scrape_emoney_spending(config, start_date, end_date):
                 expenses_for_date = expenses.get(expense_date, [])
                 expenses_for_date.append(expense_item)
                 expenses[expense_date] = expenses_for_date
-        # ensure start_date_range and end_date_range are in expenses
-        if start_date not in expenses:
-            expenses[start_date] = []
-        if end_date not in expenses:
-            expenses[end_date] = []
     except: # NoSuchElementException:
-         report('No EMoney transactions for {} - {} (or scraping failure)'.format(start_date, end_date))
+         logger.warn('No EMoney transactions for {} - {} (or scraping failure)'.format(start_date, end_date))
+    # ensure start_date_range and end_date_range are in expenses
+    if start_date not in expenses:
+        expenses[start_date] = []
+    if end_date not in expenses:
+        expenses[end_date] = []
     driver.quit()
     return expenses
 
@@ -227,13 +305,14 @@ def create_amazon_csv(config, username, password, start_date, end_date):
     #  If date set to jan 15 2020 -> feb 15 2020, the generated
     #  filename will be 15-Jan-2020_to_16-Feb-2020.csv.
     #  Returns filepath of generated csv file, else returns None.
+    global DELAY
     expenses = {}
     driver = webdriver.Chrome('/usr/bin/chromedriver')
     # for windows, %-m/%#d/%Y  might work...
     start_month, start_day, start_year = start_date.strftime('%-m/%-d/%Y').split('/')
     end_month, end_day, end_year = end_date.strftime('%-m/%-d/%Y').split('/')
     downloads_dir = os.path.expanduser('~/Downloads')
-    # remove older report(s)
+    # remove older downloads:
     files = [file for file in os.listdir(downloads_dir)]
     files = [file for file in files if file.endswith('.csv') and '_to_' in file]
     [os.remove(os.path.join(downloads_dir, file)) for file in files]
@@ -245,30 +324,30 @@ def create_amazon_csv(config, username, password, start_date, end_date):
 
     with wait_for_page_load(driver):
         driver.get(config.amazon_url)
-        time.sleep(2)
+        time.sleep(DELAY)
         sign_in_securely_button = driver.find_element_by_id('a-autoid-0-announce')
         sign_in_securely_button.click()
-        time.sleep(1)
+        time.sleep(DELAY)
     with wait_for_page_load(driver):
         email_input = driver.find_element_by_id('ap_email')
         email_input.send_keys(username)
         continue_button = driver.find_element_by_id('continue')
         continue_button.click()
-        time.sleep(1)
+        time.sleep(DELAY)
     with wait_for_page_load(driver):
         password_input = driver.find_element_by_id('ap_password')
         password_input.send_keys(password)
         sign_in_button = driver.find_element_by_id('signInSubmit')
         sign_in_button.click()
-        time.sleep(1)
+        time.sleep(DELAY)
     with wait_for_page_load(driver):
         account_list_link = driver.find_element_by_id('nav-link-accountList')
         account_list_link.click()
-        time.sleep(1)
+        time.sleep(DELAY)
     with wait_for_page_load(driver):
         download_order_reports_link = driver.find_element_by_link_text('Download order reports')
         download_order_reports_link.click()
-        time.sleep(1)
+        time.sleep(DELAY)
     with wait_for_page_load(driver):
         report_month_start = Select(driver.find_element_by_id('report-month-start'))
         report_month_start.select_by_value('{}'.format(start_month))
@@ -343,7 +422,7 @@ def merge_amazon_csv(csv_file_path, username=None):
         with open(AMAZON_CACHE_PATH) as f:
             cache = json.load(f)
     except:
-        report('Missing (or corrupt) Amazon cache "{}", using empty cache'.format(AMAZON_CACHE_PATH))
+        logger.warn('Missing (or corrupt) Amazon cache "{}", using empty cache'.format(AMAZON_CACHE_PATH))
         cache = {}
     for date in list(cache.keys()): # convert all keys to datetime.date objects
          cache[datetime.datetime.strptime(date, DATE_FORMAT).date()] = cache.pop(date)
@@ -389,7 +468,7 @@ def update_amazon_cache(config, end_date, uncache):
         with open(AMAZON_CACHE_PATH) as f:
             cache = json.load(f)
     except:
-        report('Missing (or corrupt) Amazon cache "{}", using empty cache'.format(AMAZON_CACHE_PATH))
+        logger.warn('Missing (or corrupt) Amazon cache "{}", using empty cache'.format(AMAZON_CACHE_PATH))
         cache = {}
     dates = list(cache.keys())
     for date in dates: # convert all keys to datetime.date objects
@@ -398,10 +477,10 @@ def update_amazon_cache(config, end_date, uncache):
     max_span = max([value['span'] for value in BUDGET.values()])
     start_date = end_date - datetime.timedelta(days=max_span)
     if not cache.keys(): # empty cache
-        report('Initial amazon fetch cfe: {} {}'.format(start_date, end_date))
+        logger.info('Initial amazon fetch cfe: {} {}'.format(start_date, end_date))
         filepath = create_amazon_csv(config, config.amazon_username_cfe, config.amazon_password_cfe, start_date, end_date)
         merge_amazon_csv(filepath) if filepath else report('Initial Amazon fetch for cfe failed.')
-        report('Initial amazon fetch grd: {} {}'.format(start_date, end_date))
+        logger.info('Initial amazon fetch grd: {} {}'.format(start_date, end_date))
         filepath = create_amazon_csv(config, config.amazon_username_grd, config.amazon_password_grd, start_date, end_date)
         merge_amazon_csv(filepath) if filepath else report('Initial Amazon fetch for grd failed.')
     else:
@@ -418,23 +497,23 @@ def update_amazon_cache(config, end_date, uncache):
         max_cfe = max_cfe - datetime.timedelta(days=uncache)
         if end_date > max_cfe:
             from_date = max_cfe + datetime.timedelta(days=1)
-            report('Fetching Amazon head for cfe: {} {}'.format(from_date, end_date))
+            logger.info('Fetching Amazon head for cfe: {} {}'.format(from_date, end_date))
             filepath = create_amazon_csv(config, config.amazon_username_cfe, config.amazon_password_cfe, from_date, end_date)
             merge_amazon_csv(filepath) if filepath else report('Amazon head fetch for cfe failed.')
         max_grd = max_grd - datetime.timedelta(days=uncache)
         if end_date > max_grd:
             from_date = max_grd + datetime.timedelta(days=1)
-            report('Fetching Amazon head for grd: {} {}'.format(from_date, end_date))
+            logger.info('Fetching Amazon head for grd: {} {}'.format(from_date, end_date))
             filepath = create_amazon_csv(config, config.amazon_username_grd, config.amazon_password_grd, max_grd, end_date)
             merge_amazon_csv(filepath) if filepath else report('Amazon head fetch for grd failed.')
         if start_date < min_cfe:
             to_date = min_cfe - datetime.timedelta(days=1)
-            report('Fetching Amazon tail for cfe: {} {}'.format(start_date, to_date))
+            logger.info('Fetching Amazon tail for cfe: {} {}'.format(start_date, to_date))
             filepath = create_amazon_csv(config, config.amazon_username_cfe, config.amazon_password_cfe, start_date, to_date)
             merge_amazon_csv(filepath) if filepath else report('Amazon tail fetch for cfe failed.')
         if start_date < min_grd:
             to_date = min_grd - datetime.timedelta(days=1)
-            report('Fetching Amazon tail for grd: {} {}'.format(start_date, to_date))
+            logger.info('Fetching Amazon tail for grd: {} {}'.format(start_date, to_date))
             filepath = create_amazon_csv(config, config.amazon_username_grd, config.amazon_password_grd, start_date, to_date)
             merge_amazon_csv(filepath) if filepath else report('Amazon tail fetch for grd failed.')
     return cache
@@ -445,7 +524,7 @@ def update_emoney_cache(config, end_date, uncache):
         with open(EMONEY_CACHE_PATH) as f:
             cache = json.load(f)
     except exception as ex:
-        report('Missing (or corrupt) Emoney cache "{}", using empty cache'.format(EMONEY_CACHE_PATH))
+        logger.warn('Missing (or corrupt) Emoney cache "{}", using empty cache'.format(EMONEY_CACHE_PATH))
         cache = {}
     dates = list(cache.keys())
     for date in dates: # convert all keys to datetime.date objects
@@ -454,16 +533,16 @@ def update_emoney_cache(config, end_date, uncache):
     max_span = max([value['span'] for value in BUDGET.values()])
     start_date = end_date - datetime.timedelta(days=max_span)
     if not cache.keys(): # empty cache
-        report('Initial EMoney fetch: {} {}'.format(start_date, end_date))
+        logger.info('Initial EMoney fetch: {} {}'.format(start_date, end_date))
         cache = scrape_emoney_spending(config, start_date, end_date)
     else:
         max_cache = max(cache.keys()) - datetime.timedelta(days=uncache)
         if end_date > max_cache:
-            report('EMoney head fetch: {} {}'.format(max_cache + datetime.timedelta(days=1), end_date)) 
+            logger.info('EMoney head fetch: {} {}'.format(max_cache + datetime.timedelta(days=1), end_date)) 
             cache.update(scrape_emoney_spending(config, max_cache + datetime.timedelta(days=1), end_date))
         min_cache = min(cache.keys())
         if start_date < min_cache:
-            report('EMoney tail fetch: {} {}'.format(start_date, min_cache - datetime.timedelta(days=1)))
+            logger.info('EMoney tail fetch: {} {}'.format(start_date, min_cache - datetime.timedelta(days=1)))
             cache.update(scrape_emoney_spending(config, start_date, min_cache - datetime.timedelta(days=1)))
     # Save the updated cache back to filesystem
     if os.path.exists(EMONEY_CACHE_PATH):
@@ -494,9 +573,8 @@ def update_emoney_cache(config, end_date, uncache):
         f.write('\n}\n')
     return cache
 
-
 # main starts here:
-def main():
+def runner():
     config = load_config()
     parser = argparse.ArgumentParser()
     parser.add_argument('-f', '--frequency', type=int, default=1)
@@ -509,18 +587,25 @@ def main():
         merge_amazon_csv(file_path, username)
         return
     end_date = datetime.date.today() - datetime.timedelta(days=1)
+    logger.info('Running budget to: {} uncache: {} days, frequency: every {} days'.format(
+        end_date, args.uncache, args.frequency))
     emoney_cache = update_emoney_cache(config, end_date, args.uncache)
     amazon_cache = update_amazon_cache(config, end_date, args.uncache)
-    # ...analyse budget...
     compute_budget(config, emoney_cache, amazon_cache, end_date, args.frequency)
-    return
 
-try:
-    main()
-except BaseException as ex:
-    # todo: increase timeouts, retry when Timeout waiting for page load
-    # is thrown.
-    import traceback
-    traceback.print_exc()
-    pdb.set_trace()
+def main():
+    global DELAY
+    for attempt in range(5): 
+        try:
+            runner()
+            break
+        except Exception as ex:
+            err = ('Main() caught: {}\n{}'.format(ex, traceback.format_exc()))
+            print(err)
+            logger.error(err)
+            DELAY *= 2
+            time.sleep(60 * 3)
+            logger.INFO('Increasing delay to {} secs and retrying'.format(DELAY))
+
+main()
     

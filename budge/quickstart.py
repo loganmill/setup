@@ -65,19 +65,19 @@ class GDrive(object):
                 pickle.dump(creds, token)
         self.service = build('drive', 'v3', credentials=creds)
 
-    def file_upload(self, src_file_path, gdrive_file_name, parent_folder_id='root'):
+    def file_upload(self, src_file_path, gdrive_file_name, parent_folder_id='root', mimetype='text/plain'):
         # upload file, creatint it if doesn't exist, else overwriting it.
         file_folder = self.folder_list(parent_folder_id)
         try:
             return self.service.files().update(
                 fileId = [gfile.id for gfile in file_folder if not gfile.isFolder and gfile.name == gdrive_file_name][0],
-                media_body=MediaFileUpload(src_file_path, mimetype='text/plain'),
+                media_body=MediaFileUpload(src_file_path, mimetype=mimetype),
                 fields='id').execute()['id']
         except Exception as ex:
             print('{}'.format(ex))
             return self.service.files().create(
                 body={'name': gdrive_file_name, 'parents':[parent_folder_id]},
-                media_body=MediaFileUpload(src_file_path, mimetype='text/plain'),
+                media_body=MediaFileUpload(src_file_path, mimetype=mimetype),
                 fields='id').execute()['id']
         
     def folder_get(self, folder_name, parent_folder_id='root'):
@@ -129,14 +129,13 @@ class GDrive(object):
 
 def main():
     gdrive = GDrive()
-    backup_files = ['~/.budget/amazon_cache.json',
-                    '~/.budget/amazon_exceptions.json',
-                    '~/.budget/emoney_cache.json',
-                    '~/.budget/emoney_exceptions.json']
+    budget_dir = os.path.expanduser('~/.budget')
+    budget_files = [entry.path for entry in os.scandir(budget_dir) if entry.is_file() and \
+                    entry.name not in ['config.json']]
     budget_dir_id = gdrive.folder_get('budget')
-    for file in backup_files:
-        gdrive.file_upload(os.path.expanduser(file), os.path.basename(file), budget_dir_id)
-    gdrive.file_upload(os.path.expanduser('~/.budget/report'), 'budget_report')
+    for file_path in budget_files:
+        mime_type = 'text/html' if file_path.endswith('.html') else 'text/plain'
+        gdrive.file_upload(file_path, os.path.basename(file_path), budget_dir_id, mime_type)
 
 if __name__ == '__main__':
     main()
