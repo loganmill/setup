@@ -1,15 +1,21 @@
 #!/usr/bin/env python3
+from apiclient.http import MediaFileUpload
+from apiclient import errors
 import argparse
+from budget_defs import *
 from collections import namedtuple
 import csv
 import datetime
+from googleapiclient.discovery import build
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
 import hashlib
 import json
-from budget_defs import *
 import logging
 import logging.handlers
 import os
 import pdb
+import pickle
 from re import sub
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
@@ -19,24 +25,135 @@ import sys
 import time
 import traceback
 
-report_file_name = '{}.txt'.format(
-  datetime.datetime.today().strftime('%y-%b-%d_%H:%M_%a'))
-
-report_file_path = os.path.join(REPORTS_DIR, report_file_name)
+# allow ctrl-C abort during system calls:
+from signal import signal, SIGINT
+signal(SIGINT, lambda x,y: sys.exit(0))
 
 class BudgetFileHandler(logging.handlers.RotatingFileHandler):
 
     def emit(self,record):
-       print('{} {}'.format(record.levelname, record.msg))
-       super(BudgetFileHandler, self).emit(record)
+        # print log entries to stdout: useful for development
+        print(record.msg)
+        super(BudgetFileHandler, self).emit(record)
        
-logger = logging.getLogger('budget')
+log = logging.getLogger('budget')
 hdlr = BudgetFileHandler(filename=LOG_PATH, maxBytes=10000, backupCount=5)
-hdlr.setFormatter(logging.Formatter('%(levelname)s %(message)s'))
-logger.addHandler(hdlr)
-logger.setLevel(logging.INFO)
+hdlr.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
+log.addHandler(hdlr)
+log.setLevel(logging.INFO)
 
-class wait_for_page_load(object):
+
+class GFile(dict):
+    # represents a File or Directory in GDrive, created
+    # by GDrive.list_folder.
+    folder_mimeType = 'application/vnd.google-apps.folder'
+    fields_str = 'createdTime,id,md5Checksum,mimeType,modifiedTime,name,parents,size,trashed'
+    #fields_str = '*'
+    DATE_TIME_FORMAT = '%Y-%m-%dT%H:%M:%S.%fZ'
+
+    def __init__(self, fields):
+        # All fields available as attrs, plus fields 'isFolder'(boolean). created_time and
+        # modified_time are datetime's. 'parent' is an id, self.parents[0]
+        for key,val in fields.items():
+            setattr(self, key, val)
+        if 'size' not in fields:
+            setattr(self, 'size', 0)
+        self.isFolder = fields['mimeType'] == self.folder_mimeType
+        self.createdTime = datetime.datetime.strptime(self.createdTime, self.DATE_TIME_FORMAT)
+        self.modifiedTime = datetime.datetime.strptime(self.modifiedTime, self.DATE_TIME_FORMAT)
+        self.parent = self.parents[0]
+
+    def __repr__(self):
+        return '\n'.join(['{}:{}'.format(key,val) for key,val in self.__dict__.items()])
+
+class GDrive(object):
+
+    # If modifying these scopes, delete the file token.pickle.
+    scopes = ['https://www.googleapis.com/auth/drive']
+    
+    def __init__(self):
+        creds = None
+        # token.pickle stores the user's access and refresh tokens, created
+        # when the authorization flow completes for the first time.
+        if os.path.exists('token.pickle'):
+            with open('token.pickle', 'rb') as token:
+                creds = pickle.load(token)
+        # If there are no (valid) credentials available, let the user log in.
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+            else:
+                flow = InstalledAppFlow.from_client_secrets_file(
+                    'credentials.json', self.scopes)
+                creds = flow.run_local_server(port=0)
+            # Save creds for the next run
+            with open('token.pickle', 'wb') as token:
+                pickle.dump(creds, token)
+        self.service = build('drive', 'v3', credentials=creds)
+
+    def file_upload(self, src_file_path, gdrive_file_name, parent_folder_id='root', mimetype='text/plain'):
+        # upload file, creatint it if doesn't exist, else overwriting it.
+        file_folder = self.folder_list(parent_folder_id)
+        try:
+            return self.service.files().update(
+                fileId = [gfile.id for gfile in file_folder if not gfile.isFolder and gfile.name == gdrive_file_name][0],
+                media_body=MediaFileUpload(src_file_path, mimetype=mimetype),
+                fields='id').execute()['id']
+        except Exception as ex:
+            return self.service.files().create(
+                body={'name': gdrive_file_name, 'parents':[parent_folder_id]},
+                media_body=MediaFileUpload(src_file_path, mimetype=mimetype),
+                fields='id').execute()['id']
+        
+    def folder_get(self, folder_name, parent_folder_id='root'):
+        # Return id of folder, creating it if doesn't exist
+        try:
+            return [gfile for gfile in self.folder_list(parent_folder_id) if \
+                     gfile.isFolder and gfile.name == folder_name][0].id
+        except:
+            file_metadata = {
+                'name': folder_name,
+                'mimeType': 'application/vnd.google-apps.folder' }
+            if parent_folder_id:
+                file_metadata['parents'] = [parent_folder_id]
+            return self.service.files().create(body=file_metadata, fields='id').execute().get('id')
+
+
+    def folder_list(self, folder_id=None, fields=GFile.fields_str, trashed=False):
+        """Return files/folders in folder as GFile objects.
+
+        Args:
+            folder_id: ID of the folder to print files from.
+
+        fields:
+            fields to fetch for each file.
+        trashed:
+            iff False and 'trashed' in GFile.fields_str, exclude trashed files
+        """
+        if folder_id is None:
+            folder_id = 'root'
+        page_token = None
+        g_files = []
+        try:
+            while True:
+                response = self.service.files().list(
+                    pageToken=page_token,
+                    # pageSize=100 ...use default
+                    fields='nextPageToken, files({})'.format(fields),  # '*' gives all fields
+                    q="'{}' in parents".format(folder_id)).execute()  # '*' retrieves all fields
+                for file_attrs in response.get('files', []):
+                    if trashed or not file_attrs.get('trashed', False):
+                        g_files.append(GFile(file_attrs))                  
+                page_token = response.get('nextPageToken', None)
+                if page_token is None:
+                    break
+        except Exception as ex:
+            log.exception('GDrive folder_list failed')
+            return []
+        return g_files
+
+
+class AwaitPage(object):
 
     MAX_WAIT = 30 # seconds
     
@@ -57,22 +174,22 @@ class wait_for_page_load(object):
                return True 
            else: 
                time.sleep(1.0) 
-       logger.error('Timeout waiting for page load')
+       log.error('Timeout waiting for page load')
        raise Exception('Timeout waiting for page load')
 
 
 class Budget(object):
 
-    def __init__(self, end_date=None, uncache=21, frequency=1):
+    def __init__(self, end_date=None, uncache=21, period=1):
         self.scrape_delay = 3  # extra delay used when screen-scraping
         self.end_date = end_date if end_date else datetime.date.today() - datetime.timedelta(days=1)
         self.uncache = uncache       
-        self.frequency = frequency
+        self.period = period
         self.emoney_cache = self.amazon_cache = None
         self.budget_notes = ''       
         super(Budget, self).__init__()
         if not os.path.exists(CONFIG_PATH):
-            logger.warn('Creating config "{}", edit this file and restart program'.format(CONFIG_PATH))
+            log.warn('Creating config "{}", edit this file and restart program'.format(CONFIG_PATH))
             with open(CONFIG_PATH, 'w+') as f:
                 json.dump(
                 { "emoney_url": "https://wealth.emaplan.com/ema/SignIn",
@@ -89,6 +206,24 @@ class Budget(object):
                 namedtuple('CONFIG', d.keys())(*d.values()))
 
     def get_spending_by_category(self):
+        # This will attempt 5 times to get spending by category before aborting.
+        self.emoney_cache = self.amazon_cache = None
+
+        for attempt in range(5):
+            try:
+                return self._get_spending_by_category()
+            except Exception as ex:
+                log.exception('get_spending_by_category() failure')
+                if attempt == 4:
+                    log.critical('get_spending_by_category() aborting after 5 tries')
+                    return None
+                self.scrape_delay *= 2
+                log.info('get_spending_by_catetory() increasing delay to {} secs, waiting 3 mins, then retrying'.format(self.scrape_delay))
+                time.sleep(60 * 3)
+        
+    def _get_spending_by_category(self):
+        log.info('Computing spending to: {} uncache: {}, period: {}'.format(
+            self.end_date, self.uncache, self.period))
         total_budget = 0
         emoney_cache = self.load_emoney_cache()
         amazon_cache = self.load_amazon_cache()
@@ -96,7 +231,7 @@ class Budget(object):
             total_budget += (item['limit'] / float(item['span'])) * YEAR
         self.budget_notes += 'Total annual budget: {}\n'.format(total_budget)
         spending_by_category = {}
-        frequency = self.frequency
+        period = self.period
         end_date = self.end_date
         # AMAZON_EXCEPTIONS_PATH has format { Order ID': 'Category'}
         emoney_exceptions = {}
@@ -104,7 +239,7 @@ class Budget(object):
             with open(EMONEY_EXCEPTIONS_PATH) as f:
                 emoney_exceptions = json.load(f)
         except:
-            logger.warn('Missing (or corrupt) EMONEY EXCEPTIONS, "{}", using empty file'.format(EMONEY_EXCEPTIONS_PATH))
+            log.warn('Missing (or corrupt) EMONEY EXCEPTIONS, "{}", using empty file'.format(EMONEY_EXCEPTIONS_PATH))
         for date, expenses in emoney_cache.items():
             for expense in expenses:
                 category, description = expense['Category'], expense['Description']
@@ -116,10 +251,10 @@ class Budget(object):
                     category = emoney_exceptions[expense['Order ID']]
                 if category not in BUDGET:
                     msg = 'Unknown Emoney category: {}'.format(category)
-                    logger.warn(msg)
+                    log.warn(msg)
                     self.budget_notes += msg
                     category = 'Unknown Emoney'
-                if date >= end_date - datetime.timedelta(days=BUDGET[category]['span'] + frequency):
+                if date >= end_date - datetime.timedelta(days=BUDGET[category]['span'] + period):
                     amount = expense['Amount']
                     if category == 'Kids':
                         if 'DERR' in description and amount > 120:
@@ -131,7 +266,7 @@ class Budget(object):
             with open(AMAZON_EXCEPTIONS_PATH) as f:
                 amazon_exceptions = json.load(f)
         except:
-            logger.warn('Missing (or corrupt) AMAZON EXCEPTIONS, "{}", using empty file'.format(AMAZON_EXCEPTIONS_PATH))
+            log.warn('Missing (or corrupt) AMAZON EXCEPTIONS, "{}", using empty file'.format(AMAZON_EXCEPTIONS_PATH))
             amazon_exceptions = {}
     
         for date, expenses in amazon_cache.items():
@@ -148,10 +283,10 @@ class Budget(object):
                     category = AMAZON_CATEGORIES[category]
                 elif category not in BUDGET:
                     msg = 'Unknown Amazon category: {}'.format(category)
-                    logger.warn(msg)
+                    log.warn(msg)
                     self.budget_notes + msg
                     category = 'Unknown Amazon'
-                if date >= end_date - datetime.timedelta(days=BUDGET[category]['span'] + frequency):
+                if date >= end_date - datetime.timedelta(days=BUDGET[category]['span'] + period):
                     amount = expense['Item Total']
                     spending_by_category[category] = spending_by_category.get(category, 0.0) + amount
         return spending_by_category
@@ -225,8 +360,23 @@ class Budget(object):
             span = BUDGET[item]['span']
             total = spending_by_category[item]
             reports.append('{}: {} {:.2f}/{:.2f} {} days'.format(item.rjust(32, ' '), '***' if total > limit else '   ', total, limit, span))
-        return '\n'.join(reports) + 'Notes:\n{}'.format(self.budget_notes)
+        return '\n' + '\n'.join(reports) + 'Notes:\n{}'.format(self.budget_notes)
         
+
+    def backup(self):
+        # backup all files to google drive
+        try:
+            gdrive = GDrive()
+            budget_dir = os.path.expanduser('~/.budget')
+            log.info('Performing backup of {} to gdrive'.format(budget_dir))
+            budget_files = [entry.path for entry in os.scandir(budget_dir) if entry.is_file() and \
+                            entry.name not in ['config.json']]
+            budget_dir_id = gdrive.folder_get('budget')
+            for file_path in budget_files:
+                mime_type = 'text/html' if file_path.endswith('.html') else 'text/plain'
+                gdrive.file_upload(file_path, os.path.basename(file_path), budget_dir_id, mime_type)
+        except Exception:
+            log.exception('Backup to gdrive failed.')
 
     def scrape_emoney_spending(self, start_date, finish_date):
         # all expenses >= start_date and <= finish_date. If start_date == finish_date,
@@ -240,19 +390,19 @@ class Budget(object):
         driver = webdriver.Chrome('/usr/bin/chromedriver')
         try: 
             # Print how many days we'll fetch from emoney:
-            logger.info('Scraping emoney from {} to {}'.format(start_date_range, finish_date_range))
-            with wait_for_page_load(driver):
+            log.info('Scraping emoney from {} to {}'.format(start_date_range, finish_date_range))
+            with AwaitPage(driver):
                 driver.get(config.emoney_url)
                 username = driver.find_element_by_id('Username')
                 username.send_keys(config.emoney_username)
                 pwd = driver.find_element_by_id('Password')
                 pwd.send_keys(config.emoney_password)
                 pwd.send_keys(Keys.RETURN)
-            with wait_for_page_load(driver):
+            with AwaitPage(driver):
                 spending = driver.find_element_by_partial_link_text('Spending')
                 spending.click()
             time.sleep(3)
-            with wait_for_page_load(driver):
+            with AwaitPage(driver):
                 transactions = driver.find_element_by_partial_link_text('Transactions')
                 transactions.click()
                 time.sleep(3)
@@ -295,7 +445,7 @@ class Budget(object):
                     expenses_for_date.append(expense_item)
                     expenses[expense_date] = expenses_for_date
         except: # NoSuchElementException:
-             logger.warn('No EMoney transactions for {} - {} (or scraping failure)'.format(start_date, finish_date))
+             log.warn('No EMoney transactions for {} - {} (or scraping failure)'.format(start_date, finish_date))
         # ensure start_date_range and finish_date_range are in expenses
         if start_date not in expenses:
             expenses[start_date] = []
@@ -323,34 +473,33 @@ class Budget(object):
             start_date.strftime('%d-%b-%Y'),
             (finish_date + datetime.timedelta(days=1)).strftime('%d-%b-%Y'))
         csv_file_path = os.path.join(downloads_dir, csv_file_name)
-    
-        with wait_for_page_load(driver):
+        with AwaitPage(driver):
             driver.get(self.config.amazon_url)
             time.sleep(self.scrape_delay)
             sign_in_securely_button = driver.find_element_by_id('a-autoid-0-announce')
             sign_in_securely_button.click()
             time.sleep(self.scrape_delay)
-        with wait_for_page_load(driver):
+        with AwaitPage(driver):
             email_input = driver.find_element_by_id('ap_email')
             email_input.send_keys(username)
             continue_button = driver.find_element_by_id('continue')
             continue_button.click()
             time.sleep(self.scrape_delay)
-        with wait_for_page_load(driver):
+        with AwaitPage(driver):
             password_input = driver.find_element_by_id('ap_password')
             password_input.send_keys(password)
             sign_in_button = driver.find_element_by_id('signInSubmit')
             sign_in_button.click()
             time.sleep(self.scrape_delay)
-        with wait_for_page_load(driver):
+        with AwaitPage(driver):
             account_list_link = driver.find_element_by_id('nav-link-accountList')
             account_list_link.click()
             time.sleep(self.scrape_delay)
-        with wait_for_page_load(driver):
+        with AwaitPage(driver):
             download_order_reports_link = driver.find_element_by_link_text('Download order reports')
             download_order_reports_link.click()
             time.sleep(self.scrape_delay)
-        with wait_for_page_load(driver):
+        with AwaitPage(driver):
             report_month_start = Select(driver.find_element_by_id('report-month-start'))
             report_month_start.select_by_value('{}'.format(start_month))
             report_day_start = Select(driver.find_element_by_id('report-day-start'))
@@ -424,7 +573,7 @@ class Budget(object):
             with open(AMAZON_CACHE_PATH) as f:
                 cache = json.load(f)
         except:
-            logger.warn('Missing (or corrupt) Amazon cache "{}", using empty cache'.format(AMAZON_CACHE_PATH))
+            log.warn('Missing (or corrupt) Amazon cache "{}", using empty cache'.format(AMAZON_CACHE_PATH))
             cache = {}
         for date in list(cache.keys()): # convert all keys to datetime.date objects
              cache[datetime.datetime.strptime(date, DATE_FORMAT).date()] = cache.pop(date)
@@ -473,7 +622,7 @@ class Budget(object):
             with open(AMAZON_CACHE_PATH) as f:
                 cache = json.load(f)
         except:
-            logger.warn('Missing (or corrupt) Amazon cache "{}", using empty cache'.format(AMAZON_CACHE_PATH))
+            log.warn('Missing (or corrupt) Amazon cache "{}", using empty cache'.format(AMAZON_CACHE_PATH))
             cache = {}
         dates = list(cache.keys())
         for date in dates: # convert all keys to datetime.date objects
@@ -482,10 +631,10 @@ class Budget(object):
         max_span = max([value['span'] for value in BUDGET.values()])
         start_date = end_date - datetime.timedelta(days=max_span)
         if not cache.keys(): # empty cache
-            logger.info('Initial amazon fetch cfe: {} {}'.format(start_date, end_date))
+            log.info('Initial amazon fetch cfe: {} {}'.format(start_date, end_date))
             filepath = self.create_amazon_csv(config, config.amazon_username_cfe, config.amazon_password_cfe, start_date, end_date)
             self.merge_amazon_csv(filepath) if filepath else report('Initial Amazon fetch for cfe failed.')
-            logger.info('Initial amazon fetch grd: {} {}'.format(start_date, end_date))
+            log.info('Initial amazon fetch grd: {} {}'.format(start_date, end_date))
             filepath = self.create_amazon_csv(config.amazon_username_grd, config.amazon_password_grd, start_date, end_date)
             self.merge_amazon_csv(filepath) if filepath else report('Initial Amazon fetch for grd failed.')
         else:
@@ -502,23 +651,23 @@ class Budget(object):
             max_cfe = max_cfe - datetime.timedelta(days=self.uncache)
             if end_date > max_cfe:
                 from_date = max_cfe + datetime.timedelta(days=1)
-                logger.info('Fetching Amazon head for cfe: {} {}'.format(from_date, end_date))
+                log.info('Fetching Amazon head for cfe: {} {}'.format(from_date, end_date))
                 filepath = self.create_amazon_csv(config.amazon_username_cfe, config.amazon_password_cfe, from_date, end_date)
                 self.merge_amazon_csv(filepath) if filepath else report('Amazon head fetch for cfe failed.')
             max_grd = max_grd - datetime.timedelta(days=self.uncache)
             if end_date > max_grd:
                 from_date = max_grd + datetime.timedelta(days=1)
-                logger.info('Fetching Amazon head for grd: {} {}'.format(from_date, end_date))
+                log.info('Fetching Amazon head for grd: {} {}'.format(from_date, end_date))
                 filepath = self.create_amazon_csv(config.amazon_username_grd, config.amazon_password_grd, max_grd, end_date)
                 self.merge_amazon_csv(filepath) if filepath else report('Amazon head fetch for grd failed.')
             if start_date < min_cfe:
                 to_date = min_cfe - datetime.timedelta(days=1)
-                logger.info('Fetching Amazon tail for cfe: {} {}'.format(start_date, to_date))
+                log.info('Fetching Amazon tail for cfe: {} {}'.format(start_date, to_date))
                 filepath = self.create_amazon_csv(config.amazon_username_cfe, config.amazon_password_cfe, start_date, to_date)
                 self.merge_amazon_csv(filepath) if filepath else report('Amazon tail fetch for cfe failed.')
             if start_date < min_grd:
                 to_date = min_grd - datetime.timedelta(days=1)
-                logger.info('Fetching Amazon tail for grd: {} {}'.format(start_date, to_date))
+                log.info('Fetching Amazon tail for grd: {} {}'.format(start_date, to_date))
                 filepath = self.create_amazon_csv(config.amazon_username_grd, config.amazon_password_grd, start_date, to_date)
                 self.merge_amazon_csv(filepath) if filepath else report('Amazon tail fetch for grd failed.')
         self.amazon_cache = cache
@@ -533,7 +682,7 @@ class Budget(object):
             with open(EMONEY_CACHE_PATH) as f:
                 cache = json.load(f)
         except exception as ex:
-            logger.warn('Missing (or corrupt) Emoney cache "{}", using empty cache'.format(EMONEY_CACHE_PATH))
+            log.warn('Missing (or corrupt) Emoney cache "{}", using empty cache'.format(EMONEY_CACHE_PATH))
             cache = {}
         dates = list(cache.keys())
         for date in dates: # convert all keys to datetime.date objects
@@ -542,18 +691,18 @@ class Budget(object):
         max_span = max([value['span'] for value in BUDGET.values()])
         start_date = self.end_date - datetime.timedelta(days=max_span)
         if not cache.keys(): # empty cache
-            logger.info('Initial EMoney fetch: {} {}'.format(start_date, self.end_date))
+            log.info('Initial EMoney fetch: {} {}'.format(start_date, self.end_date))
             cache = self.scrape_emoney_spending(start_date, self.end_date)
         else:
             max_cache = max(cache.keys()) - datetime.timedelta(days=self.uncache)
             if self.end_date > max_cache:
                 from_date = max_cache + datetime.timedelta(days=1)
-                logger.info('EMoney head fetch: {} {}'.format(from_date, self.end_date))
+                log.info('EMoney head fetch: {} {}'.format(from_date, self.end_date))
                 cache.update(self.scrape_emoney_spending(from_date, self.end_date))
             min_cache = min(cache.keys())
             if start_date < min_cache:
                 to_date = min_cache - datetime.timedelta(days=1)
-                logger.info('EMoney tail fetch: {} {}'.format(start_date, to_date))
+                log.info('EMoney tail fetch: {} {}'.format(start_date, to_date))
                 cache.update(self.scrape_emoney_spending(start_date, to_date))
         # Save the updated cache back to filesystem
         if os.path.exists(EMONEY_CACHE_PATH):
@@ -585,38 +734,58 @@ class Budget(object):
         self.emoney_cache = cache
         return cache
 
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-f', '--frequency', type=int, default=1)
+    parser.add_argument('-a', '--at', type=str)
+    parser.add_argument('-b', '--backup', action='store_true')
+    parser.add_argument('-p', '--period', type=int, default=1)
     parser.add_argument('-u', '--uncache', type=int, default=21)
-    parser.add_argument('-e', '--end_date', help='format: "yy-mm-dd", defaults to yesterday', type=str)
+    parser.add_argument('-e', '--end_date', help='format: "yy-mm-dd", defaults to yesterday, ignored if -a or -ma specified', type=str)
     parser.add_argument('-ma','--merge_amazon_csv',nargs=2,type=str)
     args = parser.parse_args()
-    end_date = datetime.datetime.strptime(args.end_date, config.DATE_FORMAT) if args.end_date else None
-    budget = Budget(uncache=args.uncache,end_date=end_date,frequency=args.frequency)
+
+
     if args.merge_amazon_csv:
-        file_path,username = args.merge_amazon_csv
+        budget = Budget()
+        file_path, username = args.merge_amazon_csv
         file_path = os.path.abspath(os.path.expanduser(file_path))
         budget.merge_amazon_csv(file_path, username)
         return
-    logger.info('Running budget to: {} uncache: {} days, frequency: every {} days'.format(
-        end_date, args.uncache, args.frequency))
-    for attempt in range(5):
-        try:
-            spending = budget.get_spending_by_category()
-            print(budget.format_spending(spending))
-            html = budget.format_html_spending(spending)
-            with open(HTML_PATH, 'w') as f:
-                f.write(html)
-            return
-        except Exception as ex:
-            err = ('Main() caught: {}\n{}'.format(ex, traceback.format_exc()))
-            print(err)
-            logger.error(err)
-        budget.scrape_delay *= 2
-        time.sleep(60 * 3)
-        logger.INFO('Increasing delay to {} secs and retrying'.format(budget.scrape_delay))
+    elif args.at: # run continuosly at given time every 'period' days:
 
+        def current_time_seconds():
+            now = datetime.datetime.now() 
+            return (now - now.replace(hour=0,minute=0,second=0,microsecond=0)).seconds
+
+        seconds_per_day = 24 * 60 * 60
+        at_seconds = (datetime.datetime.strptime(args.at,'%H:%M:%S') -
+                      datetime.datetime.strptime('0:0:0','%H:%M:%S')).seconds
+        initial_sleep = (at_seconds - current_time_seconds()) % seconds_per_day
+        log.info('Initial sleep: {:.2f} hours.'.format(initial_sleep / 3600.0))
+        time.sleep(initial_sleep)
+        while True:
+            time.sleep(max(at_seconds - current_time_seconds(), 0)) # sleep iff here to soon due to time inaccuracy
+            budget = Budget(uncache=args.uncache, end_date=None, period=args.period)
+            spending = budget.get_spending_by_category()
+            if spending:
+                log.info(budget.format_spending(spending))
+                with open(HTML_PATH, 'w') as f:
+                    f.write(budget.format_html_spending(spending))
+                if args.backup:
+                    budget.backup()
+            log.info('Begin sleep of: {}'.format(args.period * seconds_per_day))
+            time.sleep(args.period * seconds_per_day)
+    else:
+        end_date = datetime.datetime.strptime(args.end_date, config.DATE_FORMAT) if args.end_date else None
+        budget = Budget(uncache=args.uncache, end_date=None, period=args.period)
+        spending = budget.get_spending_by_category()
+        if spending:
+            log.info(budget.format_spending(spending))
+            with open(HTML_PATH, 'w') as f:
+                f.write(budget.format_html_spending(spending))
+            if args.backup:
+               budget.backup()
 
 if __name__ == '__main__':
    main()
