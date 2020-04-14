@@ -1,0 +1,257 @@
+
+<CategorySelectorButton@ToggleButton>:
+    size_hint_y: None
+    height:30
+    text_size: self.size
+    halign: 'center'
+    valign: 'center'
+    background_color: (.8,.8,.8,1) if self.state == 'normal' else (1,1,1,1)
+    color: 0,0,0,1
+    background_normal: ''
+    background_down: ''
+
+<CategorySetterButton@Button>:
+    size_hint_y: None
+    height:30
+    background_color: 1,1,1,1
+    color: 0,0,0,1
+    background_normal: ''
+
+<DateLabel@Label>:
+    padding: [30, 0]
+    text_size: self.size
+    halign: 'left'
+    valign: 'center'
+    size_hint_y: None
+    height: 40
+    color: 0,0,0
+    canvas.before:
+        Color:
+            rgb: .8,.8,.8
+        Rectangle:
+            size: self.size
+            pos: self.pos
+
+<CategoryExpenses@ModalView>:
+    BoxLayout:
+        orientation: 'vertical'
+        canvas.before:
+            Color:
+                rgb: .8,.8,.8
+            Rectangle:
+                size: self.size
+                pos: self.pos
+        BoxLayout:
+            id: summary
+            size_hint_y: None
+            height: 50
+            orientation: 'horizontal'
+            padding: 5,5,20,5
+            over_budget: False
+            Button:
+                size_hint_x: None
+                width: 40
+                background_normal: ''
+                background_color: 0,0,0,0
+                color: 0,0,0
+                font_size: 20
+                text: '<-'
+                on_press: root.dismiss()
+            Widget:
+            ExpenseRowLabel:
+                id: category
+                width: 200
+                halign: 'right'
+            ExpenseRowLabel:
+                id: total
+            ExpenseRowLabel:
+                id: limit
+            ExpenseRowLabel:
+                id: span
+            Widget:
+            Widget:
+                size_hint_x: None
+                width: 40
+                
+        ScrollView:
+            canvas.before:
+                Color:
+                    rgb: 1,1,1
+                Rectangle:
+                    size: self.size
+                    pos: self.pos
+
+            do_scroll_x: False
+            bar_width: 20
+            scroll_type: ['bars', 'content']
+            BoxLayout:
+                spacing: 20
+                orientation: 'vertical'
+                size_hint_y: None
+                on_children: self.height = sum([child.height+self.spacing for child in self.children])
+                id: expense_list
+        
+
+<ExpenseItem@BoxLayout>:
+    orientation: 'horizontal'
+    Label:
+        on_parent: root.key = self
+        color: 0,0,0
+        size_hint_x: None
+        width: 200
+        text_size: self.size
+        halign: 'right'
+        valign: 'middle'
+    Label:
+        id: value
+        padding: [10,0]
+        on_parent: root.value = self
+        color: 0,0,0
+        text_size: self.size
+        halign: 'left'
+        shorten: True
+        valign: 'middle'
+        
+<Expense@BoxLayout>:
+    padding: 0,0,20,0
+    size_hint_y: None
+    orientation: 'vertical'
+    height: 100
+    is_known_category: True
+    canvas:
+        Color:
+            rgba: (0,0,0,0) if self.is_known_category else (.8,0,0,1)
+        Rectangle:
+            size: self.size
+            pos: self.pos
+
+<ExpenseRowLabel@Label>:
+    color: (1,0,0) if self.parent and self.parent.over_budget else (0,0,0)
+    size_hint_x: None
+    width: 60
+    text_size: self.size
+    halign: 'right'
+    valign: 'middle'
+  
+<ExpenseRow@ButtonBehavior+BoxLayout>:
+    orientation: 'horizontal'
+    size_hint_y: None
+    height: 50
+    spacing: 10
+    padding: 20,0
+    cols: []
+    over_budget: self.cols and self.cols[1] > self.cols[2]
+    on_cols: category.text=self.cols[0] ; total.text=self.cols[1]; limit.text=self.cols[2] ; span.text=self.cols[3]
+    canvas.before:
+        Color:
+            rgb: (.8,.8,.8) if self.cols and self.cols[4] % 2 else (1,1,1)
+        Rectangle:
+            size: self.size
+            pos: self.pos
+    Widget:
+    ExpenseRowLabel:
+        id: category
+        width: 200
+        halign: 'right'
+    ExpenseRowLabel:
+        id: total
+    ExpenseRowLabel:
+        id: limit
+    ExpenseRowLabel:
+        id: span
+    Widget:
+
+BoxLayout:
+    orientation: 'vertical'
+    BoxLayout:
+        size_hint_y: None
+        height: 50
+        orientation: 'horizontal'
+        padding: 0,5,20,5
+        Button:
+            on_parent: app.save_button = self
+            text: 'Save'
+            disabled: True
+            size_hint_x: None
+            width: 100
+            on_press: app.write_exceptions()
+
+    RecycleView:
+        on_parent: app.layout = self
+        viewclass: 'ExpenseRow'
+        canvas.before:
+            Color:
+                rgb: 1,1,1
+            Rectangle:
+                size: self.size
+                pos: self.pos
+        RecycleBoxLayout:
+            default_size: None, 50
+            default_size_hint: 1, None
+            size_hint_y: None
+            height: self.minimum_height
+            orientation: 'vertical'
+
+
+<ExpenseLayout@ScrollView>:
+    do_scroll_x: False
+    bar_width: 20
+    scroll_type: ['bars', 'content']
+    canvas.before:
+        Color:
+            rgb: 1,1,1
+        Rectangle:
+            size: self.size
+            pos: self.pos
+    BoxLayout:
+        spacing: 20
+        orientation: 'vertical'
+        size_hint_y: None
+        on_children: self.height = sum([child.height+self.spacing for child in self.children])
+        id: expense_list
+
+<CategoryLayout@BoxLayout>:
+    orientation: 'horizontal'
+    ScrollView:
+        size_hint_x: None
+        width: 300
+        BoxLayout:
+            id: categories
+            size_hint_y: None
+            orientation: 'vertical'
+    BoxLayout:
+        orientation: 'vertical'
+        Label:
+            id: details
+            color: 0,0,0
+            size_hint_y: None
+            height: 40
+            halign: 'center'
+        ScrollView:
+            scroll_type: ['bars', 'content']
+            bar_width: 20
+            BoxLayout:
+                id: expenses
+                orientation: 'vertical'
+                spacing: 20
+                size_hint_y: None
+
+<BudgetLabel@Label>:
+    padding: [30, 10]
+    text_size: self.size
+    halign: 'right'
+    valign: 'center'
+    size_hint: None, None
+    size: 200,40
+    color: 0,0,0
+
+<BudgetLayout@BoxLayout>:
+    orientation: 'vertical'
+    BoxLayout:
+        orientation: 'horizontal'
+        BudgetLabel:
+            text: 'Immediate Run'
+        Button:
+            text: 'Run'
+
+
