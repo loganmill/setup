@@ -12,6 +12,7 @@ from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.behaviors import ButtonBehavior
 from kivy.properties import BooleanProperty
+from kivy.properties import ObjectProperty
 from kivy.clock import Clock
 import copy
 import json
@@ -20,38 +21,40 @@ from re import sub
 
 from budget_defs import *
 
-AMAZON_EXPENSE_KEYS = ['Title', 'Category', 'Item Total','Shipping Address City','Buyer Name', 'Order ID', 'Date']
-EMONEY_EXPENSE_KEYS = ['Date','Description', 'Account', 'Category', 'Amount', 'Order ID', 'Date']
-
+AMAZON_EXPENSE_KEYS = ['Date', 'Title', 'Category', 'Item Total','Shipping Address City','Buyer Name', 'Order ID']
+EMONEY_EXPENSE_KEYS = ['Date','Description', 'Account', 'Category', 'Amount', 'Order ID']
 
 class CategoryExpenses(ModalView):
     pass
 
 class ExpenseRow(ButtonBehavior,BoxLayout):
 
+    details = ObjectProperty()
+    
     def __init__(self, *args, **kwargs):
         super(ExpenseRow, self).__init__(*args, **kwargs)
 
+    def on_details(self, row, details):
+        self.over_budget = self.details['total'] > self.details['limit']
+        for key,val in self.details.items():
+            if key in ('total', 'limit'):
+                self.ids[key].text = '{:.2f}'.format(val)
+            elif key in ('expenses', 'index'):
+                pass
+            else:
+                self.ids[key].text = str(val)
+        
     def on_press(self):
         app = App.get_running_app()
-        # popup scrolling list of expenses
-        category = self.cols[0]
-        details = app.category_data[category]
+        details = self.details
         expenses = details['expenses']
         expenses.sort(reverse=True, key=lambda expense: str(expense['Date']))
         popup = CategoryExpenses()
         expense_list = popup.ids['expense_list']
-        popup.ids['category'].text = self.cols[0]
-        popup.ids['total'].text = self.cols[1]
-        popup.ids['limit'].text = self.cols[2]
-        popup.ids['span'].text = self.cols[3]
-        popup.ids['summary'].over_budget = self.over_budget
+        popup.ids['heading'].text = '{}: {:.2f}/{:.2f} {} days'.format(details['category'], details['total'], details['limit'], details['span'])
         for expense in expenses:
             is_amazon = 'Item Total' in expense  # Emoney has 'Amount'
-            expense_list.add_widget(
-                Expense(AMAZON_EXPENSE_KEYS if is_amazon else EMONEY_EXPENSE_KEYS,
-                        app.amazon_exceptions if is_amazon else app.emoney_exceptions,
-                        expense, True))
+            expense_list.add_widget(Expense(details, expense))
         popup.open()
 
 class ExpenseRowLabel(Label):
@@ -90,22 +93,17 @@ class ExpenseItem(BoxLayout):
 
 class Expense(ButtonBehavior, BoxLayout):
 
-    known_category = BooleanProperty('False')
-
-    def __init__(self, expense_keys, exceptions, expense, is_known_category, *args, **kwargs):
+    def __init__(self, details, expense, *args, **kwargs):
         super(Expense, self).__init__(*args, **kwargs)
-        self.app = App.get_running_app()
-        self.height = len(expense_keys) * 25
-        self.exceptions = exceptions
+        app = App.get_running_app()
+        self.details = details
         self.expense = expense
-        self.category_label = None
-        self.is_known_category = is_known_category
-        for key,value in expense.items():
-           if key in expense_keys:
-               item = ExpenseItem(key, str(value))
-               if key == 'Category':
-                   self.category_label = item.ids['value']
-               self.add_widget(item)
+        amazon_expense = 'Item Total' in expense  # Emoney has 'Amount'
+        self.exceptions = app.amazon_exceptions if amazon_expense else app.emoney_exceptions
+        expense_keys = AMAZON_EXPENSE_KEYS if amazon_expense else EMONEY_EXPENSE_KEYS
+        self.height = len(expense_keys) * 25
+        for key in expense_keys:
+            self.add_widget(ExpenseItem(key, str(expense[key])))
 
     def on_press(self, *args):
         # here we'll pop up a list to change the category
@@ -114,22 +112,22 @@ class Expense(ButtonBehavior, BoxLayout):
         expense = self.expense
         
         def set_category(button):
+            app = App.get_running_app()
             new_category = button.text
             current_category = self.category_label.text
             oid = expense['Order ID']
-            # Move expense to new category in category structure. Note:
-            # the expense iself.app.category_expenses is not the same object
-            # as self.expense.
-            category_expenses = self.app.category_expenses[current_category]
+            category_expenses = app.category_data[current_category]['expenses']
             target_expense = [exp for exp in category_expenses if exp['Order ID'] == oid][0]
-            self.app.category_expenses[current_category] = \
-                    [exp for exp in category_expenses if exp['Order ID'] != oid]
+            app.category_data[current_category]['expenses'] = \
+                [exp for exp in category_expenses if exp['Order ID'] != oid]
             target_expense['Category'] = new_category
-            self.app.category_expenses[new_category].append(target_expense)
+            difference = target_expense['Item Total' if 'Item Total' in target_expense else 'Amount']
+            app.category_data[new_category]['expenses'].append(target_expense)
+            app.category_data[category]['total'] -= difference
+            app.category_data[new_category]['total'] += difference
             # Set new category in expense and exceptions structure
             self.exceptions[oid] = self.category_label.text = expense['Category'] = new_category
-            self.is_known_category = True
-            self.app.save_button.disabled = False
+            app.save_button.disabled = False
             popup.dismiss()
         
         for category in sorted(BUDGET.keys()):
@@ -226,7 +224,7 @@ class BViewApp(App):
                 if category == 'Kids' and 'Description' in expense and 'Derr' in expense['Description']:
                     expense['amount'] /= 2.0
                 span = BUDGET[category]['span']
-                details = category_data.get(category, {'total':0, 'limit': BUDGET[category]['limit'], 'span':span,'expenses':[]})
+                details = category_data.get(category, {'category': category, 'total':0, 'limit': BUDGET[category]['limit'], 'span':span,'expenses':[]})
                 if date >= end_date - datetime.timedelta(days=span + period):
                     details['total'] += expense['Item Total'] if 'Item Total' in expense else expense['Amount']
                     details['expenses'].append(expense)
@@ -261,12 +259,8 @@ class BViewApp(App):
         index = 0
         for category in sorted(self.category_data.keys()):
             details = self.category_data[category]
-            rows.append( {'cols':['{}'.format(category),
-                                  '{:.2f}'.format(details['total']),
-                                  '{:.2f}'.format(details['limit']),
-                                  '{}'.format(details['span']),
-                                  index
-                                 ]})
+            details['index'] = index
+            rows.append({'details': details})
             index += 1
         self.layout.data = rows
 

@@ -57,18 +57,10 @@
                 font_size: 20
                 text: '<-'
                 on_press: root.dismiss()
-            Widget:
             ExpenseRowLabel:
-                id: category
-                width: 200
-                halign: 'right'
-            ExpenseRowLabel:
-                id: total
-            ExpenseRowLabel:
-                id: limit
-            ExpenseRowLabel:
-                id: span
-            Widget:
+                id: heading
+                size_hint_x: 1
+                halign: 'center'
             Widget:
                 size_hint_x: None
                 width: 40
@@ -117,13 +109,6 @@
     size_hint_y: None
     orientation: 'vertical'
     height: 100
-    is_known_category: True
-    canvas:
-        Color:
-            rgba: (0,0,0,0) if self.is_known_category else (.8,0,0,1)
-        Rectangle:
-            size: self.size
-            pos: self.pos
 
 <ExpenseRowLabel@Label>:
     color: (1,0,0) if self.parent and self.parent.over_budget else (0,0,0)
@@ -139,12 +124,11 @@
     height: 50
     spacing: 10
     padding: 20,0
-    cols: []
-    over_budget: self.cols and self.cols[1] > self.cols[2]
-    on_cols: category.text=self.cols[0] ; total.text=self.cols[1]; limit.text=self.cols[2] ; span.text=self.cols[3]
+    details: None
+    over_budget: False
     canvas.before:
         Color:
-            rgb: (.8,.8,.8) if self.cols and self.cols[4] % 2 else (1,1,1)
+            rgb: (.8,.8,.8) if self.details and self.details['index'] % 2 else (1,1,1)
         Rectangle:
             size: self.size
             pos: self.pos
