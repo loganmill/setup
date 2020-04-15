@@ -21,20 +21,24 @@ from re import sub
 
 from budget_defs import *
 
-AMAZON_EXPENSE_KEYS = ['Date', 'Title', 'Category', 'Item Total','Shipping Address City','Buyer Name', 'Order ID']
-EMONEY_EXPENSE_KEYS = ['Date','Description', 'Account', 'Category', 'Amount', 'Order ID']
+AMAZON_EXPENSE_KEYS = ['Date', 'Cost', 'Title', 'Category', 'Shipping Address City','Buyer Name', 'Order ID']
+EMONEY_EXPENSE_KEYS = ['Date', 'Cost', 'Description', 'Account', 'Category', 'Order ID']
 
 class CategoryExpenses(ModalView):
     pass
 
-class ExpenseRow(ButtonBehavior,BoxLayout):
+class CategoryRow(ButtonBehavior,BoxLayout):
 
     details = ObjectProperty()
     
     def __init__(self, *args, **kwargs):
-        super(ExpenseRow, self).__init__(*args, **kwargs)
+        super(CategoryRow, self).__init__(*args, **kwargs)
 
-    def on_details(self, row, details):
+    def on_details(self, category_row, details):
+        if not details:
+            return
+        self.details = category_row.details
+        self.details['total'] = sum([expense['Cost'] for expense in details['expenses']])
         self.over_budget = self.details['total'] > self.details['limit']
         for key,val in self.details.items():
             if key in ('total', 'limit'):
@@ -53,11 +57,11 @@ class ExpenseRow(ButtonBehavior,BoxLayout):
         expense_list = popup.ids['expense_list']
         popup.ids['heading'].text = '{}: {:.2f}/{:.2f} {} days'.format(details['category'], details['total'], details['limit'], details['span'])
         for expense in expenses:
-            is_amazon = 'Item Total' in expense  # Emoney has 'Amount'
-            expense_list.add_widget(Expense(details, expense))
+            is_amazon = 'Title' in expense  # Emoney has 'Description'
+            expense_list.add_widget(Expense(self, expense))
         popup.open()
 
-class ExpenseRowLabel(Label):
+class CategoryRowLabel(Label):
     pass
 
 class BudgetLayout(BoxLayout):
@@ -93,12 +97,12 @@ class ExpenseItem(BoxLayout):
 
 class Expense(ButtonBehavior, BoxLayout):
 
-    def __init__(self, details, expense, *args, **kwargs):
+    def __init__(self, category_row, expense, *args, **kwargs):
         super(Expense, self).__init__(*args, **kwargs)
         app = App.get_running_app()
-        self.details = details
+        self.category_row = category_row
         self.expense = expense
-        amazon_expense = 'Item Total' in expense  # Emoney has 'Amount'
+        amazon_expense = 'Title' in expense  # Emoney has 'Description'
         self.exceptions = app.amazon_exceptions if amazon_expense else app.emoney_exceptions
         expense_keys = AMAZON_EXPENSE_KEYS if amazon_expense else EMONEY_EXPENSE_KEYS
         self.height = len(expense_keys) * 25
@@ -113,20 +117,17 @@ class Expense(ButtonBehavior, BoxLayout):
         
         def set_category(button):
             app = App.get_running_app()
+            details = self.category_row.details
+            current_category = details['category']
             new_category = button.text
-            current_category = self.category_label.text
             oid = expense['Order ID']
-            category_expenses = app.category_data[current_category]['expenses']
+            category_expenses = details['expenses']
             target_expense = [exp for exp in category_expenses if exp['Order ID'] == oid][0]
-            app.category_data[current_category]['expenses'] = \
-                [exp for exp in category_expenses if exp['Order ID'] != oid]
             target_expense['Category'] = new_category
-            difference = target_expense['Item Total' if 'Item Total' in target_expense else 'Amount']
-            app.category_data[new_category]['expenses'].append(target_expense)
-            app.category_data[category]['total'] -= difference
-            app.category_data[new_category]['total'] += difference
-            # Set new category in expense and exceptions structure
-            self.exceptions[oid] = self.category_label.text = expense['Category'] = new_category
+            details['expenses'] = [exp for exp in category_expenses if exp['Order ID'] != oid]
+            self.category_row.details = {}
+            self.category_row.details = details            
+            self.exceptions[oid] = new_category
             app.save_button.disabled = False
             popup.dismiss()
         
@@ -175,6 +176,7 @@ class BViewApp(App):
                     expense['Category'] = amazon_exceptions.get(id)
                 elif category in AMAZON_CATEGORIES:
                     expense['Category'] = AMAZON_CATEGORIES[category]
+                expense['Cost'] = expense.pop('Item Total')
                 expense['Date'] = date
         dates = list(amazon_cache.keys())
         for date in dates: # convert all keys to datetime.date objects
@@ -203,6 +205,7 @@ class BViewApp(App):
                 id = expense.get('Order ID', None)
                 if id in emoney_exceptions:
                     expense['Category'] = emoney_exceptions.get(id)
+                expense['Cost'] = expense.pop('Amount')
                 expense['Date'] = date
                 
         # Create the category cache by 'merging' amazon and emoney category cache's
@@ -226,7 +229,6 @@ class BViewApp(App):
                 span = BUDGET[category]['span']
                 details = category_data.get(category, {'category': category, 'total':0, 'limit': BUDGET[category]['limit'], 'span':span,'expenses':[]})
                 if date >= end_date - datetime.timedelta(days=span + period):
-                    details['total'] += expense['Item Total'] if 'Item Total' in expense else expense['Amount']
                     details['expenses'].append(expense)
                 category_data[category] = details
         self.amazon_cache = amazon_cache

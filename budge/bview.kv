@@ -57,7 +57,7 @@
                 font_size: 20
                 text: '<-'
                 on_press: root.dismiss()
-            ExpenseRowLabel:
+            CategoryRowLabel:
                 id: heading
                 size_hint_x: 1
                 halign: 'center'
@@ -110,7 +110,7 @@
     orientation: 'vertical'
     height: 100
 
-<ExpenseRowLabel@Label>:
+<CategoryRowLabel@Label>:
     color: (1,0,0) if self.parent and self.parent.over_budget else (0,0,0)
     size_hint_x: None
     width: 60
@@ -118,7 +118,7 @@
     halign: 'right'
     valign: 'middle'
   
-<ExpenseRow@ButtonBehavior+BoxLayout>:
+<CategoryRow@ButtonBehavior+BoxLayout>:
     orientation: 'horizontal'
     size_hint_y: None
     height: 50
@@ -133,15 +133,15 @@
             size: self.size
             pos: self.pos
     Widget:
-    ExpenseRowLabel:
+    CategoryRowLabel:
         id: category
         width: 200
         halign: 'right'
-    ExpenseRowLabel:
+    CategoryRowLabel:
         id: total
-    ExpenseRowLabel:
+    CategoryRowLabel:
         id: limit
-    ExpenseRowLabel:
+    CategoryRowLabel:
         id: span
     Widget:
 
@@ -162,7 +162,7 @@ BoxLayout:
 
     RecycleView:
         on_parent: app.layout = self
-        viewclass: 'ExpenseRow'
+        viewclass: 'CategoryRow'
         canvas.before:
             Color:
                 rgb: 1,1,1

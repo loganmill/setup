@@ -219,6 +219,7 @@ class Budget(object):
                     return None
                 self.scrape_delay *= 2
                 log.info('get_spending_by_catetory() increasing delay to {} secs, waiting 3 mins, then retrying'.format(self.scrape_delay))
+                os.system('sudo systemctl restart NetworkManager')
                 time.sleep(60 * 3)
         
     def _get_spending_by_category(self):
@@ -788,5 +789,6 @@ def main():
                budget.backup()
 
 if __name__ == '__main__':
-   main()
+    os.system('sudo ls') # prompt for sudo password, if necessary  
+    main()
     
