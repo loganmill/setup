@@ -22,11 +22,12 @@ BUDGET_DIR = os.path.abspath(BUDGET_DIR)
 
 CONFIG_PATH = os.path.join(BUDGET_DIR, 'config.json')
 EMONEY_CACHE_PATH = os.path.join(BUDGET_DIR, 'emoney_cache.json')
-EMONEY_EXCEPTIONS_PATH = os.path.join(BUDGET_DIR, 'emoney_exceptions.json')
 AMAZON_CACHE_PATH = os.path.join(BUDGET_DIR,'amazon_cache.json')
-AMAZON_EXCEPTIONS_PATH = os.path.join(BUDGET_DIR, 'amazon_exceptions.json')
+EXCEPTIONS_CACHE_PATH = os.path.join(BUDGET_DIR, 'exceptions_cache.json')
+
 LOG_PATH = os.path.join(BUDGET_DIR, 'budget.log')
 HTML_PATH = os.path.join(BUDGET_DIR, 'budget.html')
+
 ARCHIVE_DIR = os.path.join(BUDGET_DIR, 'archive/')
 REPORTS_DIR = os.path.join(BUDGET_DIR, 'reports/')
 

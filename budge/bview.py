@@ -21,69 +21,66 @@ from re import sub
 
 from budget_defs import *
 
-AMAZON_EXPENSE_KEYS = ['Date', 'Cost', 'Title', 'Category', 'Shipping Address City','Buyer Name', 'Order ID']
-EMONEY_EXPENSE_KEYS = ['Date', 'Cost', 'Description', 'Account', 'Category', 'Order ID']
+# Only the following keys will be extracted from corresponding cache:
+AMAZON_EXPENSE_KEYS = ['Date', 'Cost', 'Title', 'Category', 'Shipping Address City','Buyer Name',  'Source', 'Order ID']
+EMONEY_EXPENSE_KEYS = ['Date', 'Cost', 'Description', 'Account', 'Category', 'Source', 'Order ID']
+# Following merges previous 2: used for ordering on-screen presentation
+EXPENSE_KEYS = ['Date', 'Cost', 'Title', 'Description', 'Category', 'Account', 'Shipping Address City', 'Buyer Name', 'Source', 'Order ID']
 
 class CategoryExpenses(ModalView):
-    pass
+
+     current = None
+
+     def __init__(self, details, *args, **kwargs):
+         super(CategoryExpenses, self).__init__(*args, **kwargs)        
+         CategoryExpenses.current = self
+         self.details = details
+         expenses = details['expenses']
+         expenses.sort(reverse=True, key=lambda expense: str(expense['Date']))
+         expense_list = self.ids['expense_list']
+         for expense in expenses:
+             expense_list.add_widget(Expense(expense))
+         self.set_heading()
+
+     def set_heading(self):
+         details = self.details
+         self.ids['heading'].text = '{}: {:.2f}/{:.2f} {} days'.format(
+             details['category'], details['total'], details['limit'], details['span'])
 
 class CategoryRow(ButtonBehavior,BoxLayout):
 
+    # Warning: class vars don't work as expected when using RecycleViews:
+    # the class can seemingly be reloaded during scrolling, causing apparent
+    # reinitialization of class vars.
     details = ObjectProperty()
     
     def __init__(self, *args, **kwargs):
         super(CategoryRow, self).__init__(*args, **kwargs)
 
-    def on_details(self, category_row, details):
+    def on_details(self, row, details):
         if not details:
             return
-        self.details = category_row.details
+        self.details = details
+        #print(self.details['category'], self.details['total'])
         self.details['total'] = sum([expense['Cost'] for expense in details['expenses']])
+        #print(self.details['category'], self.details['total'])
         self.over_budget = self.details['total'] > self.details['limit']
         for key,val in self.details.items():
             if key in ('total', 'limit'):
                 self.ids[key].text = '{:.2f}'.format(val)
-            elif key in ('expenses', 'index'):
-                pass
+            elif key == 'expenses':
+                continue
             else:
                 self.ids[key].text = str(val)
         
     def on_press(self):
-        app = App.get_running_app()
         details = self.details
         expenses = details['expenses']
         expenses.sort(reverse=True, key=lambda expense: str(expense['Date']))
-        popup = CategoryExpenses()
-        expense_list = popup.ids['expense_list']
-        popup.ids['heading'].text = '{}: {:.2f}/{:.2f} {} days'.format(details['category'], details['total'], details['limit'], details['span'])
-        for expense in expenses:
-            is_amazon = 'Title' in expense  # Emoney has 'Description'
-            expense_list.add_widget(Expense(self, expense))
-        popup.open()
-
-class CategoryRowLabel(Label):
-    pass
-
-class BudgetLayout(BoxLayout):
-    pass
-
-class CategorySetterButton(Button):
-    pass
-
-class CategorySelectorButton(ToggleButton):
-    pass
+        CategoryExpenses(self.details).open()
 
 
-class CategoryLayout(BoxLayout):
-    pass
-
-class DateLabel(Label):
-    pass
-
-class ExpenseLabel(Label):
-    pass
-
-class ExpenseLayout(ScrollView):
+class CategorySetterButton(Button): # needed
     pass
 
 
@@ -93,44 +90,40 @@ class ExpenseItem(BoxLayout):
         super(ExpenseItem, self).__init__(*args, **kwargs)
         self.key.text = key + ': '
         self.value.text = value
-        
+
 
 class Expense(ButtonBehavior, BoxLayout):
 
-    def __init__(self, category_row, expense, *args, **kwargs):
+    def __init__(self, expense, *args, **kwargs):
         super(Expense, self).__init__(*args, **kwargs)
-        app = App.get_running_app()
-        self.category_row = category_row
         self.expense = expense
-        amazon_expense = 'Title' in expense  # Emoney has 'Description'
-        self.exceptions = app.amazon_exceptions if amazon_expense else app.emoney_exceptions
-        expense_keys = AMAZON_EXPENSE_KEYS if amazon_expense else EMONEY_EXPENSE_KEYS
-        self.height = len(expense_keys) * 25
-        for key in expense_keys:
-            self.add_widget(ExpenseItem(key, str(expense[key])))
-
+        for key in EXPENSE_KEYS:
+            if key in expense:
+                self.add_widget(ExpenseItem(key, str(expense[key])))
+        self.height = len(self.children) * 25
+        
     def on_press(self, *args):
         # here we'll pop up a list to change the category
-        dropdown = DropDown(size_hint=(1,1))
         popup = None
         expense = self.expense
         
         def set_category(button):
             app = App.get_running_app()
-            details = self.category_row.details
-            current_category = details['category']
-            new_category = button.text
+            category_cache = app.category_cache
             oid = expense['Order ID']
-            category_expenses = details['expenses']
-            target_expense = [exp for exp in category_expenses if exp['Order ID'] == oid][0]
+            current_category = expense['Category']
+            current_category_expenses = category_cache[current_category]['expenses']
+            target_expense = [exp for exp in current_category_expenses if exp['Order ID'] == oid][0]
+            new_category = button.text
             target_expense['Category'] = new_category
-            details['expenses'] = [exp for exp in category_expenses if exp['Order ID'] != oid]
-            self.category_row.details = {}
-            self.category_row.details = details            
-            self.exceptions[oid] = new_category
-            app.save_button.disabled = False
+            category_cache[current_category]['expenses'] = [exp for exp in current_category_expenses if exp['Order ID'] != oid]
+            category_cache[new_category]['expenses'].append(target_expense)
+            App.get_running_app().populate()
             popup.dismiss()
-        
+            self.parent.remove_widget(self)
+            Clock.schedule_once(lambda x: CategoryExpenses.current.set_heading(), 0.5)
+            
+        dropdown = DropDown(size_hint=(1,1))
         for category in sorted(BUDGET.keys()):
             widget = CategorySetterButton(text=str(category), on_press=set_category)
             dropdown.add_widget(widget)
@@ -147,19 +140,19 @@ class BViewApp(App):
         super(BViewApp, self).__init__(*args, **kwargs)
         self.save_button = self.expense_layout = self.operation_spinner = None
         Window.bind(on_request_close=self.exit_check)
-        self.load_cache()
+        self.load_cache(self, *args)
         Clock.schedule_once(self.populate, 0.5)
 
-    def load_cache(self):
-        # Load amazon exceptions
-        amazon_exceptions = {}
+    def load_cache(self, *args):
+        # Load exceptions
+        exceptions_cache = {}
         try:
-            with open(AMAZON_EXCEPTIONS_PATH) as f:
-                amazon_exceptions = json.load(f)
+            with open(EXCEPTIONS_CACHE_PATH) as f:
+                exceptions_cache = json.load(f)
         except:
-            print('Missing (or corrupt) AMAZON EXCEPTIONS, "{}", using empty file'.format(AMAZON_EXCEPTIONS_PATH))
+            print('Missing (or corrupt) exceptions cache, "{}", using empty file'.format(EXCEPTIONS_CACHE_PATH))
         # Load amazon cache
-        amazon_cache = amazon_cache = {}
+        amazon_cache = {}
         try:
             with open(AMAZON_CACHE_PATH) as f:
                 amazon_cache = json.load(f)
@@ -172,23 +165,18 @@ class BViewApp(App):
                 if category in ['date-marker']:
                     continue
                 id = expense.get('Order ID', None)
-                if id in amazon_exceptions:
-                    expense['Category'] = amazon_exceptions.get(id)
+                if id in exceptions_cache:
+                    expense['Category'] = exceptions_cache[id]
                 elif category in AMAZON_CATEGORIES:
                     expense['Category'] = AMAZON_CATEGORIES[category]
                 expense['Cost'] = expense.pop('Item Total')
                 expense['Date'] = date
+                expense['Source'] = 'Amazon'
+                # trim to required keys
+                expense = {key:val for key,val in expense.items() if key in AMAZON_EXPENSE_KEYS}
         dates = list(amazon_cache.keys())
         for date in dates: # convert all keys to datetime.date objects
             amazon_cache[datetime.datetime.strptime(date, DATE_FORMAT).date()] = amazon_cache.pop(date)
-
-        # Load emoney exceptions
-        emoney_exceptions = {}
-        try:
-            with open(EMONEY_EXCEPTIONS_PATH) as f:
-                emoney_exceptions = json.load(f)
-        except:
-            print('Missing (or corrupt) EMONEY EXCEPTIONS, "{}", using empty file'.format(EMONEY_EXCEPTIONS_PATH))
         # Load emoney cache
         emoney_cache = {}
         try:
@@ -203,22 +191,24 @@ class BViewApp(App):
         for date, expenses in emoney_cache.items():
             for expense in expenses:
                 id = expense.get('Order ID', None)
-                if id in emoney_exceptions:
-                    expense['Category'] = emoney_exceptions.get(id)
+                if id in exceptions_cache:
+                    expense['Category'] = exceptions_cache[id]
                 expense['Cost'] = expense.pop('Amount')
                 expense['Date'] = date
+                expense['Source'] = 'EMoney'
+                # trim to required keys
+                expense = {key:val for key,val in expense.items() if key in EMONEY_EXPENSE_KEYS}
                 
         # Create the category cache by 'merging' amazon and emoney category cache's
-        amazon_category_cache = copy.deepcopy(amazon_cache)
-        merged_cache = copy.deepcopy(emoney_cache)
+        merged_cache = emoney_cache
         for date, expenses in merged_cache.items():
-            if date in amazon_category_cache:
-                expenses.extend(amazon_category_cache.pop(date))
-        merged_cache.update(amazon_category_cache)
-        # Now re-index by 'Category':
+            if date in amazon_cache:
+                expenses.extend(amazon_cache.pop(date))
+        merged_cache.update(amazon_cache)
+        # Create index by 'Category':
         period = 1
         end_date = datetime.date.today() - datetime.timedelta(days=1)
-        category_data = {}
+        category_cache = {}
         for date, expenses in merged_cache.items():
             for expense in expenses:
                 category = expense.get('Category', None)
@@ -227,17 +217,19 @@ class BViewApp(App):
                 if category == 'Kids' and 'Description' in expense and 'Derr' in expense['Description']:
                     expense['amount'] /= 2.0
                 span = BUDGET[category]['span']
-                details = category_data.get(category, {'category': category, 'total':0, 'limit': BUDGET[category]['limit'], 'span':span,'expenses':[]})
+                details = category_cache.get(category, {'category': category, 'total':0, 'limit': BUDGET[category]['limit'], 'span':span,'expenses':[]})
                 if date >= end_date - datetime.timedelta(days=span + period):
                     details['expenses'].append(expense)
-                category_data[category] = details
-        self.amazon_cache = amazon_cache
-        self.amazon_exceptions = amazon_exceptions
-        self.emoney_cache = emoney_cache
-        self.emoney_exceptions = emoney_exceptions
-        self.category_data = category_data
-        #import pprint
-        #print(pprint.pformat(self.category_data, indent=2))
+                category_cache[category] = details
+        self.category_cache = category_cache
+        self.exceptions_cache = exceptions_cache
+
+    def populate(self, *args):
+        self.layout.data = []
+        category_cache = self.category_cache
+        categories = sorted(category_cache.keys()) 
+        self.indexes = {val:key for key,val in dict(enumerate(categories)).items()}
+        self.layout.data = [{'details': category_cache[category]} for category in categories]
         
     def exit_check(self, *args):
         if self.save_button.disabled:
@@ -256,27 +248,16 @@ class BViewApp(App):
         self.load_cache()
         self.populate()
 
-    def populate(self, *args):
-        rows = []
-        index = 0
-        for category in sorted(self.category_data.keys()):
-            details = self.category_data[category]
-            details['index'] = index
-            rows.append({'details': details})
-            index += 1
-        self.layout.data = rows
-
     def write_exceptions(self):
         # todo: prefer date/time based backups
-        for cache_path, exceptions in ((AMAZON_EXCEPTIONS_PATH, self.amazon_exceptions), (EMONEY_EXCEPTIONS_PATH, self.emoney_exceptions)):
-            try:
-                with open(cache_path + '.tmp','w+') as f:
-                    json.dump(exceptions, f, indent=2)
-                os.rename(cache_path + '.tmp', cache_path)
-            except:
-                popup = Popup(title='Failed to write exceptions to: {}'.format(cache_path))
-                popup.add_widget(Button(text='OK'))
-                popup.open()
+        try:
+            with open(EXCEPTIONS_CACHE_PATH + '.tmp','w+') as f:
+                json.dump(self.exceptions_cache, f, indent=2)
+            os.rename(EXCEPTIONS_CACHE_PATH + '.tmp', EXCEPTIONS_CACHE_PATH)
+        except:
+            popup = Popup(title='Failed to write exceptions to: {}'.format(EXCEPTIONS_CACHE_PATH))
+            popup.add_widget(Button(text='OK'))
+            popup.open()
         self.save_button.disabled = True
 
 

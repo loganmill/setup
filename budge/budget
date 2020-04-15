@@ -213,13 +213,13 @@ class Budget(object):
             try:
                 return self._get_spending_by_category()
             except Exception as ex:
-                log.exception('get_spending_by_category() failure')
+                log.exception('get_spending_by_category() failure: {}'.format(ex))
                 if attempt == 4:
                     log.critical('get_spending_by_category() aborting after 5 tries')
                     return None
                 self.scrape_delay *= 2
                 log.info('get_spending_by_catetory() increasing delay to {} secs, waiting 3 mins, then retrying'.format(self.scrape_delay))
-                os.system('sudo systemctl restart NetworkManager')
+                os.system('systemctl restart NetworkManager')
                 time.sleep(60 * 3)
         
     def _get_spending_by_category(self):
@@ -234,13 +234,11 @@ class Budget(object):
         spending_by_category = {}
         period = self.period
         end_date = self.end_date
-        # AMAZON_EXCEPTIONS_PATH has format { Order ID': 'Category'}
-        emoney_exceptions = {}
         try:
-            with open(EMONEY_EXCEPTIONS_PATH) as f:
-                emoney_exceptions = json.load(f)
+            with open(EXCEPTIONS_CACHE_PATH) as f:
+                exceptions_cache = json.load(f)
         except:
-            log.warn('Missing (or corrupt) EMONEY EXCEPTIONS, "{}", using empty file'.format(EMONEY_EXCEPTIONS_PATH))
+            log.warn('Missing (or corrupt) exceptions cache, "{}", using empty file'.format(EXCEPTIONS_CACHE_PATH))
         for date, expenses in emoney_cache.items():
             for expense in expenses:
                 category, description = expense['Category'], expense['Description']
@@ -248,8 +246,8 @@ class Budget(object):
                     continue # should appear in amazon_cache
                 if description in['AMZN MKTP US', 'AMAZON.COM']:
                     continue ; # These should have category as 'AMAZON', but just in case...
-                if expense['Order ID'] in emoney_exceptions:
-                    category = emoney_exceptions[expense['Order ID']]
+                if expense['Order ID'] in exceptions_cache:
+                    category = exceptions_cache[expense['Order ID']]
                 if category not in BUDGET:
                     msg = 'Unknown Emoney category: {}'.format(category)
                     log.warn(msg)
@@ -262,24 +260,14 @@ class Budget(object):
                            # < 120 is health, otherwise shared expense with GF
                            amount /= 2.0
                     spending_by_category[category] = spending_by_category.get(category, 0.0) + amount
-        # AMAZON_EXCEPTIONS_PATH has format { Order ID': 'Category'}
-        try:
-            with open(AMAZON_EXCEPTIONS_PATH) as f:
-                amazon_exceptions = json.load(f)
-        except:
-            log.warn('Missing (or corrupt) AMAZON EXCEPTIONS, "{}", using empty file'.format(AMAZON_EXCEPTIONS_PATH))
-            amazon_exceptions = {}
-    
         for date, expenses in amazon_cache.items():
-            days_exceptions = amazon_exceptions.get(date, [])
-            exceptions_map = { item['Order ID']: item['Category'] for item in days_exceptions }
             for expense in expenses:
                 category = expense['Category']
                 if category == 'date-marker':
                     continue
                 # translate amazon category, if possible
-                if expense['Order ID'] in amazon_exceptions:
-                    category = amazon_exceptions[expense['Order ID']]
+                if expense['Order ID'] in exceptions_cache:
+                    category = exceptions_cache[expense['Order ID']]
                 elif category in AMAZON_CATEGORIES: # try to 'translate' category
                     category = AMAZON_CATEGORIES[category]
                 elif category not in BUDGET:
@@ -291,7 +279,6 @@ class Budget(object):
                     amount = expense['Item Total']
                     spending_by_category[category] = spending_by_category.get(category, 0.0) + amount
         return spending_by_category
-
 
     def format_html_spending(self, spending_by_category):
         total_budget = 0
@@ -789,6 +776,5 @@ def main():
                budget.backup()
 
 if __name__ == '__main__':
-    os.system('sudo ls') # prompt for sudo password, if necessary  
     main()
     

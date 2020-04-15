@@ -1,15 +1,4 @@
 
-<CategorySelectorButton@ToggleButton>:
-    size_hint_y: None
-    height:30
-    text_size: self.size
-    halign: 'center'
-    valign: 'center'
-    background_color: (.8,.8,.8,1) if self.state == 'normal' else (1,1,1,1)
-    color: 0,0,0,1
-    background_normal: ''
-    background_down: ''
-
 <CategorySetterButton@Button>:
     size_hint_y: None
     height:30
@@ -17,46 +6,35 @@
     color: 0,0,0,1
     background_normal: ''
 
-<DateLabel@Label>:
-    padding: [30, 0]
-    text_size: self.size
-    halign: 'left'
-    valign: 'center'
-    size_hint_y: None
-    height: 40
-    color: 0,0,0
-    canvas.before:
-        Color:
-            rgb: .8,.8,.8
-        Rectangle:
-            size: self.size
-            pos: self.pos
 
 <CategoryExpenses@ModalView>:
     BoxLayout:
         orientation: 'vertical'
-        canvas.before:
-            Color:
-                rgb: .8,.8,.8
-            Rectangle:
-                size: self.size
-                pos: self.pos
         BoxLayout:
             id: summary
             size_hint_y: None
             height: 50
             orientation: 'horizontal'
-            padding: 5,5,20,5
+            padding: 10,5,20,10
             over_budget: False
-            Button:
+            canvas.before:
+                Color:
+                    rgb: .8,.8,.8
+                Rectangle:
+                    size: self.size
+                    pos: self.pos
+            BoxLayout:
                 size_hint_x: None
-                width: 40
-                background_normal: ''
-                background_color: 0,0,0,0
-                color: 0,0,0
-                font_size: 20
-                text: '<-'
-                on_press: root.dismiss()
+                width: 24
+                orientation: 'vertical'
+                Button:
+                    size_hint: None, None
+                    size: 24, 24
+                    background_color: 1,1,1,1
+                    color: 0,0,0
+                    background_normal: 'back.png'
+                    on_press: root.dismiss()
+                Widget:
             CategoryRowLabel:
                 id: heading
                 size_hint_x: 1
@@ -82,7 +60,6 @@
                 size_hint_y: None
                 on_children: self.height = sum([child.height+self.spacing for child in self.children])
                 id: expense_list
-        
 
 <ExpenseItem@BoxLayout>:
     orientation: 'horizontal'
@@ -113,7 +90,7 @@
 <CategoryRowLabel@Label>:
     color: (1,0,0) if self.parent and self.parent.over_budget else (0,0,0)
     size_hint_x: None
-    width: 60
+    width: 100
     text_size: self.size
     halign: 'right'
     valign: 'middle'
@@ -128,7 +105,7 @@
     over_budget: False
     canvas.before:
         Color:
-            rgb: (.8,.8,.8) if self.details and self.details['index'] % 2 else (1,1,1)
+            rgb: (.8,.8,.8) if app.indexes and self.details and app.indexes[self.details['category']] % 2  else (1,1,1)
         Rectangle:
             size: self.size
             pos: self.pos
@@ -142,6 +119,7 @@
     CategoryRowLabel:
         id: limit
     CategoryRowLabel:
+        width: 60
         id: span
     Widget:
 
@@ -152,6 +130,14 @@ BoxLayout:
         height: 50
         orientation: 'horizontal'
         padding: 0,5,20,5
+        canvas.before:
+            Color:
+                rgb: .3,.0,.55
+            Rectangle:
+                size: self.size
+                pos: self.pos
+
+        Widget:
         Button:
             on_parent: app.save_button = self
             text: 'Save'
@@ -177,65 +163,5 @@ BoxLayout:
             orientation: 'vertical'
 
 
-<ExpenseLayout@ScrollView>:
-    do_scroll_x: False
-    bar_width: 20
-    scroll_type: ['bars', 'content']
-    canvas.before:
-        Color:
-            rgb: 1,1,1
-        Rectangle:
-            size: self.size
-            pos: self.pos
-    BoxLayout:
-        spacing: 20
-        orientation: 'vertical'
-        size_hint_y: None
-        on_children: self.height = sum([child.height+self.spacing for child in self.children])
-        id: expense_list
-
-<CategoryLayout@BoxLayout>:
-    orientation: 'horizontal'
-    ScrollView:
-        size_hint_x: None
-        width: 300
-        BoxLayout:
-            id: categories
-            size_hint_y: None
-            orientation: 'vertical'
-    BoxLayout:
-        orientation: 'vertical'
-        Label:
-            id: details
-            color: 0,0,0
-            size_hint_y: None
-            height: 40
-            halign: 'center'
-        ScrollView:
-            scroll_type: ['bars', 'content']
-            bar_width: 20
-            BoxLayout:
-                id: expenses
-                orientation: 'vertical'
-                spacing: 20
-                size_hint_y: None
-
-<BudgetLabel@Label>:
-    padding: [30, 10]
-    text_size: self.size
-    halign: 'right'
-    valign: 'center'
-    size_hint: None, None
-    size: 200,40
-    color: 0,0,0
-
-<BudgetLayout@BoxLayout>:
-    orientation: 'vertical'
-    BoxLayout:
-        orientation: 'horizontal'
-        BudgetLabel:
-            text: 'Immediate Run'
-        Button:
-            text: 'Run'
 
 
