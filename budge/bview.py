@@ -44,8 +44,8 @@ class CategoryExpenses(ModalView):
 
      def set_heading(self):
          details = self.details
-         self.ids['heading'].text = '{}: {:.2f}/{:.2f} {} days'.format(
-             details['category'], details['total'], details['limit'], details['span'])
+         self.ids['bar'].title.text = '{}: ${:.2f} available, ${:.2f}/${:.2f} spent, {} days'.format(
+             details['category'], details['available'], details['total'], details['limit'], details['span'])
 
 class CategoryRow(ButtonBehavior,BoxLayout):
 
@@ -61,12 +61,12 @@ class CategoryRow(ButtonBehavior,BoxLayout):
         if not details:
             return
         self.details = details
-        #print(self.details['category'], self.details['total'])
-        self.details['total'] = sum([expense['Cost'] for expense in details['expenses']])
-        #print(self.details['category'], self.details['total'])
-        self.over_budget = self.details['total'] > self.details['limit']
+        self.details['total'] = total = sum([expense['Cost'] for expense in details['expenses']])
+        limit = self.details['limit']
+        self.details['available'] = max(limit-total, 0)
+        self.over_budget = total > limit
         for key,val in self.details.items():
-            if key in ('total', 'limit'):
+            if key in ('available', 'total', 'limit'):
                 self.ids[key].text = '{:.2f}'.format(val)
             elif key == 'expenses':
                 continue
@@ -80,17 +80,20 @@ class CategoryRow(ButtonBehavior,BoxLayout):
         CategoryExpenses(self.details).open()
 
 
-class CategorySetterButton(Button): # needed
+class CategoryChooserRow(ButtonBehavior, Label):
     pass
 
 
-class ExpenseItem(BoxLayout):
+class CategoryChooser(ModalView):
+    pass
+
+
+class ExpenseField(BoxLayout):
 
     def __init__(self, key, value, *args, **kwargs):     
-        super(ExpenseItem, self).__init__(*args, **kwargs)
+        super(ExpenseField, self).__init__(*args, **kwargs)
         self.key.text = key + ': '
         self.value.text = value
-
 
 class Expense(ButtonBehavior, BoxLayout):
 
@@ -99,12 +102,12 @@ class Expense(ButtonBehavior, BoxLayout):
         self.expense = expense
         for key in EXPENSE_KEYS:
             if key in expense:
-                self.add_widget(ExpenseItem(key, str(expense[key])))
+                self.add_widget(ExpenseField(key, str(expense[key])))
         self.height = len(self.children) * 25
         
     def on_press(self, *args):
         # here we'll pop up a list to change the category
-        popup = None
+        chooser = None
         expense = self.expense
         
         def set_category(button):
@@ -118,28 +121,29 @@ class Expense(ButtonBehavior, BoxLayout):
             target_expense['Category'] = new_category
             category_cache[current_category]['expenses'] = [exp for exp in current_category_expenses if exp['Order ID'] != oid]
             category_cache[new_category]['expenses'].append(target_expense)
-            App.get_running_app().populate()
-            popup.dismiss()
+            app.dirty = True
+            app.populate()
+            chooser.dismiss()
             self.parent.remove_widget(self)
             Clock.schedule_once(lambda x: CategoryExpenses.current.set_heading(), 0.5)
             
-        dropdown = DropDown(size_hint=(1,1))
+        chooser = CategoryChooser()
+        category_list = chooser.ids['category_list']
         for category in sorted(BUDGET.keys()):
-            widget = CategorySetterButton(text=str(category), on_press=set_category)
-            dropdown.add_widget(widget)
-        popup = Popup(
-            title=expense['Title'] if 'Title' in expense else expense['Description'],
-            content=dropdown,
-            size_hint=(.5,.9))
-        popup.open()
-
+            widget = CategoryChooserRow(text=str(category), on_press=set_category)
+            category_list.add_widget(widget)
+        chooser.ids['bar'].title.text = \
+            expense['Title'] if 'Title' in expense else expense['Description']
+        chooser.open()
                
 class BViewApp(App):
 
+    dirty = BooleanProperty(False)
+
     def __init__(self, *args, **kwargs):
         super(BViewApp, self).__init__(*args, **kwargs)
-        self.save_button = self.expense_layout = self.operation_spinner = None
         Window.bind(on_request_close=self.exit_check)
+        self.period = 1
         self.load_cache(self, *args)
         Clock.schedule_once(self.populate, 0.5)
 
@@ -198,7 +202,6 @@ class BViewApp(App):
                 expense['Source'] = 'EMoney'
                 # trim to required keys
                 expense = {key:val for key,val in expense.items() if key in EMONEY_EXPENSE_KEYS}
-                
         # Create the category cache by 'merging' amazon and emoney category cache's
         merged_cache = emoney_cache
         for date, expenses in merged_cache.items():
@@ -206,9 +209,10 @@ class BViewApp(App):
                 expenses.extend(amazon_cache.pop(date))
         merged_cache.update(amazon_cache)
         # Create index by 'Category':
-        period = 1
+        period = self.period
         end_date = datetime.date.today() - datetime.timedelta(days=1)
         category_cache = {}
+        self.max_date = max(merged_cache.keys())
         for date, expenses in merged_cache.items():
             for expense in expenses:
                 category = expense.get('Category', None)
@@ -217,7 +221,13 @@ class BViewApp(App):
                 if category == 'Kids' and 'Description' in expense and 'Derr' in expense['Description']:
                     expense['amount'] /= 2.0
                 span = BUDGET[category]['span']
-                details = category_cache.get(category, {'category': category, 'total':0, 'limit': BUDGET[category]['limit'], 'span':span,'expenses':[]})
+                details = category_cache.get(category,
+                    {'category': category,
+                     'available': 0,
+                     'total':0,
+                     'limit': BUDGET[category]['limit'],
+                     'span':span,
+                     'expenses':[]})
                 if date >= end_date - datetime.timedelta(days=span + period):
                     details['expenses'].append(expense)
                 category_cache[category] = details
@@ -228,13 +238,15 @@ class BViewApp(App):
         self.layout.data = []
         category_cache = self.category_cache
         categories = sorted(category_cache.keys()) 
-        self.indexes = {val:key for key,val in dict(enumerate(categories)).items()}
+        self.indexes = {val:key for key,val in dict(enumerate(categories)).items()} # used to alternate colours
         self.layout.data = [{'details': category_cache[category]} for category in categories]
-        
+        self.root.ids['bar'].title.text = '{}'.format(
+             (self.max_date + datetime.timedelta(days=self.period)).strftime('%a %b %d %Y'))
+
     def exit_check(self, *args):
-        if self.save_button.disabled:
+        if not self.dirty:
            return False
-        popup = Popup(title="App has unsaved changes. Really exit?", size_hint=(None, None), size=(220,140))
+        popup = Popup(title="Buddy has unsaved changes. Really exit?", size_hint=(.6, None), height=120)
         layout = BoxLayout(orientation='horizontal', padding=(10,10,10,10), spacing=10)
         layout.add_widget(Button(text='Cancel', on_press=popup.dismiss))
         layout.add_widget(Button(text='Exit', on_press=self.stop))
@@ -249,7 +261,6 @@ class BViewApp(App):
         self.populate()
 
     def write_exceptions(self):
-        # todo: prefer date/time based backups
         try:
             with open(EXCEPTIONS_CACHE_PATH + '.tmp','w+') as f:
                 json.dump(self.exceptions_cache, f, indent=2)
@@ -258,7 +269,7 @@ class BViewApp(App):
             popup = Popup(title='Failed to write exceptions to: {}'.format(EXCEPTIONS_CACHE_PATH))
             popup.add_widget(Button(text='OK'))
             popup.open()
-        self.save_button.disabled = True
+        self.dirty = False
 
 
 BViewApp().run()

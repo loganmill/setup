@@ -1,52 +1,63 @@
+#:set appbar_background_color (.95,.95,.93,1)
+#:set even_row (.75,.73,.75,1)
+#:set odd_row (.87,.9,.9,1)
+#:set over_budget (.75,0,0,1)
+#:set black (0,0,0,1)
+#:set transparent (0,0,0,0)
+#:set white (1,1,1,1)
 
-<CategorySetterButton@Button>:
+#:set category_width 150
+
+#
+# AppBar layout
+#
+<AppBar@BoxLayout>:
     size_hint_y: None
-    height:30
-    background_color: 1,1,1,1
-    color: 0,0,0,1
-    background_normal: ''
+    height: 50
+    orientation: 'horizontal'
+    padding: 20,0,20,0
+    dismiss: None # Called when back button pressed, if defined.
+    canvas:
+        Color:
+            rgb: appbar_background_color
+        Rectangle:
+            size: self.size
+            pos: self.pos
+    Button:
+        size_hint: None, None
+        size: 50,50
+        background_color: appbar_background_color
+        background_normal: 'back.png' if root.dismiss else ''
+        background_down: ''
+        on_press: root.dismiss() if root.dismiss else None
+    Label:
+        on_parent: root.title = self
+        markup: True
+        color: black
+        font_size: 17
+    Button:
+        size_hint: None, None
+        size: 50,50
+        background_color: appbar_background_color
+        background_normal: 'drive.png' if app.dirty else ''
+        background_down: ''
+        on_press: app.write_exceptions() if app.dirty else None
 
+
+#
+# Category Expenses panel
+#
 
 <CategoryExpenses@ModalView>:
     BoxLayout:
         orientation: 'vertical'
-        BoxLayout:
-            id: summary
-            size_hint_y: None
-            height: 50
-            orientation: 'horizontal'
-            padding: 10,5,20,10
-            over_budget: False
-            canvas.before:
-                Color:
-                    rgb: .8,.8,.8
-                Rectangle:
-                    size: self.size
-                    pos: self.pos
-            BoxLayout:
-                size_hint_x: None
-                width: 24
-                orientation: 'vertical'
-                Button:
-                    size_hint: None, None
-                    size: 24, 24
-                    background_color: 1,1,1,1
-                    color: 0,0,0
-                    background_normal: 'back.png'
-                    on_press: root.dismiss()
-                Widget:
-            CategoryRowLabel:
-                id: heading
-                size_hint_x: 1
-                halign: 'center'
-            Widget:
-                size_hint_x: None
-                width: 40
-                
+        AppBar:
+            id: bar
+            dismiss: lambda *args: root.dismiss()
         ScrollView:
             canvas.before:
                 Color:
-                    rgb: 1,1,1
+                    rgb: white
                 Rectangle:
                     size: self.size
                     pos: self.pos
@@ -61,11 +72,29 @@
                 on_children: self.height = sum([child.height+self.spacing for child in self.children])
                 id: expense_list
 
-<ExpenseItem@BoxLayout>:
+<Expense@BoxLayout>:
+    canvas.before:
+        Color:
+            rgba: even_row if self.parent and self.parent.children.index(self) % 2 else odd_row
+        Rectangle:
+            size: self.width, self.height + (30 if self.parent and self.parent.children[-1] == self else 20)
+            pos: self.x, self.y - 10
+    padding: 0,0,20,0
+    size_hint_y: None
+    orientation: 'vertical'
+    height: 100
+
+<ExpenseField@BoxLayout>:
     orientation: 'horizontal'
+    canvas.before:
+        Color:
+            rgba: (1,1,1,.15) if self.parent and self.parent.children.index(self) % 2 else transparent
+        Rectangle:
+            size: self.size
+            pos: self.pos
     Label:
         on_parent: root.key = self
-        color: 0,0,0
+        color: black
         size_hint_x: None
         width: 200
         text_size: self.size
@@ -75,25 +104,23 @@
         id: value
         padding: [10,0]
         on_parent: root.value = self
-        color: 0,0,0
+        color: black
         text_size: self.size
         halign: 'left'
         shorten: True
         valign: 'middle'
         
-<Expense@BoxLayout>:
-    padding: 0,0,20,0
-    size_hint_y: None
-    orientation: 'vertical'
-    height: 100
 
-<CategoryRowLabel@Label>:
-    color: (1,0,0) if self.parent and self.parent.over_budget else (0,0,0)
+<ColumnLabel@Label>:
+    color: black
     size_hint_x: None
     width: 100
     text_size: self.size
     halign: 'right'
     valign: 'middle'
+
+<CategoryRowLabel@ColumnLabel>:
+    color: over_budget if self.parent and self.parent.over_budget else black
   
 <CategoryRow@ButtonBehavior+BoxLayout>:
     orientation: 'horizontal'
@@ -105,15 +132,17 @@
     over_budget: False
     canvas.before:
         Color:
-            rgb: (.8,.8,.8) if app.indexes and self.details and app.indexes[self.details['category']] % 2  else (1,1,1)
+            rgb: even_row if app.indexes and self.details and app.indexes[self.details['category']] % 2  else odd_row
         Rectangle:
             size: self.size
             pos: self.pos
     Widget:
     CategoryRowLabel:
         id: category
-        width: 200
+        width: category_width
         halign: 'right'
+    CategoryRowLabel:
+        id: available
     CategoryRowLabel:
         id: total
     CategoryRowLabel:
@@ -123,35 +152,90 @@
         id: span
     Widget:
 
-BoxLayout:
-    orientation: 'vertical'
+#
+# Category Chooser Panel
+#
+
+<CategoryChooser@ModalView>:
     BoxLayout:
-        size_hint_y: None
-        height: 50
+        orientation: 'vertical'
+        AppBar:
+            id: bar
+            dismiss: lambda *args: root.dismiss()
+        ScrollView:
+            canvas.before:
+                Color:
+                    rgb: white
+                Rectangle:
+                    size: self.size
+                    pos: self.pos
+
+            do_scroll_x: False
+            bar_width: 20
+            scroll_type: ['bars', 'content']
+            BoxLayout:
+                orientation: 'vertical'
+                size_hint_y: None
+                on_children: self.height = sum([child.height+self.spacing for child in self.children])
+                id: category_list
+
+
+<CategoryChooserRow@ButtonBehavior+Label>:
+    color: black
+    size_hint_y: None
+    height: 40
+    text_size: self.size
+    halign: 'center'
+    valign: 'middle'
+    canvas.before:
+        Color:
+            rgba: even_row if self.parent and self.parent.children.index(self) % 2 else odd_row
+        Rectangle:
+            size: self.size
+            pos: self.pos
+
+#
+# Main Panel
+#
+
+BoxLayout:
+    on_parent: app.root = self
+    orientation: 'vertical'
+    AppBar:
+        id: bar
+    BoxLayout:
         orientation: 'horizontal'
-        padding: 0,5,20,5
+        size_hint_y: None
+        height: 20
+        spacing: 10
+        padding: 20,0,20,0
         canvas.before:
             Color:
-                rgb: .3,.0,.55
+                rgb: white
             Rectangle:
                 size: self.size
                 pos: self.pos
-
         Widget:
-        Button:
-            on_parent: app.save_button = self
-            text: 'Save'
-            disabled: True
-            size_hint_x: None
-            width: 100
-            on_press: app.write_exceptions()
-
+        ColumnLabel:
+            width: category_width    
+            halign: 'right'
+            text: 'Category'
+        ColumnLabel:
+            text: 'Available'
+        ColumnLabel:
+            text: 'Total'
+        ColumnLabel:
+            text: 'Limit'
+        ColumnLabel:
+            text: 'Span'
+            width: 60
+        Widget:
     RecycleView:
         on_parent: app.layout = self
         viewclass: 'CategoryRow'
         canvas.before:
             Color:
-                rgb: 1,1,1
+                rgb: white
             Rectangle:
                 size: self.size
                 pos: self.pos
