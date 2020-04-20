@@ -731,8 +731,8 @@ def main():
     parser.add_argument('-u', '--uncache', type=int, default=21)
     parser.add_argument('-e', '--end_date', help='format: "yy-mm-dd", defaults to yesterday, ignored if -a or -ma specified', type=str)
     parser.add_argument('-ma','--merge_amazon_csv',nargs=2,type=str)
+    parser.add_argument('-s','--server',nargs=1,type=int, default=5000)
     args = parser.parse_args()
-
 
     if args.merge_amazon_csv:
         budget = Budget()
@@ -740,7 +740,39 @@ def main():
         file_path = os.path.abspath(os.path.expanduser(file_path))
         budget.merge_amazon_csv(file_path, username)
         return
-    elif args.at: # run continuosly at given time every 'period' days:
+
+    if args.server:
+        import threading
+        from http.server import BaseHTTPRequestHandler, HTTPServer
+        port = 5000
+        class HttpBudgetRequestHandler(BaseHTTPRequestHandler):
+
+            def do_GET(self):
+                path = {'/amazon':AMAZON_CACHE_PATH,
+                        '/emoney':EMONEY_CACHE_PATH,
+                        '/exceptions':EXCEPTIONS_CACHE_PATH}.get(self.path, None)
+                if path:
+                    with open(path) as f:
+                        data = f.read().encode('ascii')
+                else:
+                    data = 'Unknown request'
+                self.send_response(200)
+                self.send_header('Content-type', 'text/plain')
+                #self.send_header('Content-type', 'application/json')
+                #self.send_header('Content-type', 'application/octet-stream')
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                dst_write = self.wfile.write
+                dst_write(data)
+
+        def serve(*args):
+            server = HTTPServer(('', port), HttpBudgetRequestHandler)            
+            server.serve_forever()
+
+        threading.Thread(target=serve).start()        
+        
+
+    if args.at: # run continuosly at given time every 'period' days:
 
         def current_time_seconds():
             now = datetime.datetime.now() 

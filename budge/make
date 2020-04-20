@@ -1,0 +1,34 @@
+#!/usr/bin/env python
+
+# Run this command to (re)build the android apk.
+# Will take 1 or more hours to run the first time.
+# Warning: the build will fail is buildozer.spec has
+# warn_on_root = 1, so if you ever have to regenerate
+# Also consider nandroid.accept_sdk_license=True
+# In buildozer.spec:
+#    warn_on_root = 0
+#    log_level= 2
+#
+# no args: just build
+#      ... otherwise specify 'clean', 'apk' and/or 'install'
+
+import os, sys, subprocess
+
+if len(sys.argv) < 2:
+    print('Usage: make build or make [clean] [apk] [install]')
+
+args = ' '.join(sys.argv)
+
+if 'build' in sys.argv:
+    print(subprocess.check_output('sudo docker build . --tag kivy/buildozer', shell=True))
+
+
+if 'clean' in sys.argv:
+    print(subprocess.check_output('docker run --rm --privileged  -v $PWD:/buildozer kivy/buildozer buildozer android clean', shell=True))
+
+if 'apk' in sys.argv:
+    # res = subprocess.check_output('sudo docker run --privileged -v $PWD:/buildozer tshirtman/buildozer buildozer android debug', shell=True)
+    print(subprocess.check_output('docker run --rm -v $HOME/.buildozer:/home/user/.buildozer -v $PWD:/home/user/hostcwd kivy/buildozer android debug', shell=True))
+
+
+      

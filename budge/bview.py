@@ -3,6 +3,7 @@ from kivy.app import App
 from kivy.core.window import Window
 from kivy.uix.widget import Widget
 from kivy.uix.button import Button
+from kivy.uix.dropdown import DropDown
 from kivy.uix.togglebutton import ToggleButton
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.dropdown import DropDown
@@ -17,6 +18,7 @@ from kivy.clock import Clock
 import copy
 import json
 import pdb
+import requests
 from re import sub
 
 from budget_defs import *
@@ -87,6 +89,8 @@ class CategoryChooserRow(ButtonBehavior, Label):
 class CategoryChooser(ModalView):
     pass
 
+class AppMenu(DropDown):
+     pass
 
 class ExpenseField(BoxLayout):
 
@@ -144,24 +148,32 @@ class BViewApp(App):
         super(BViewApp, self).__init__(*args, **kwargs)
         Window.bind(on_request_close=self.exit_check)
         self.period = 1
+        self.http = True
         self.load_cache(self, *args)
         Clock.schedule_once(self.populate, 0.5)
 
+    def get_cache(self, path):
+       if self.http:
+           path = { 'amazon': 'http://localhost:5000/amazon',
+                    'emoney': 'http://localhost:5000/emoney',
+                    'exceptions': 'http://localhost:5000/exceptions'
+                  }[path]
+           response = requests.get(path)
+           return json.loads(response.text)
+       try:
+           path = { 'amazon': AMAZON_CACHE_PATH,
+                    'emoney': EMONEY_CACHE_PATH,
+                    'exceptions': EXCEPTIONS_CACHE_PATH
+                  }[path]
+           with open(path) as f:
+               return json.load(f)
+       except:
+            print('Missing (or corrupt) cache, "{}", using empty map'.format(path))
+
     def load_cache(self, *args):
-        # Load exceptions
-        exceptions_cache = {}
-        try:
-            with open(EXCEPTIONS_CACHE_PATH) as f:
-                exceptions_cache = json.load(f)
-        except:
-            print('Missing (or corrupt) exceptions cache, "{}", using empty file'.format(EXCEPTIONS_CACHE_PATH))
-        # Load amazon cache
-        amazon_cache = {}
-        try:
-            with open(AMAZON_CACHE_PATH) as f:
-                amazon_cache = json.load(f)
-        except:
-            print('Missing (or corrupt) AMAZON CACHE, "{}", using empty file'.format(AMAZON_CACHE_PATH))
+        amazon_cache = self.get_cache('amazon')
+        emoney_cache = self.get_cache('emoney')
+        exceptions_cache = self.get_cache('exceptions')
         # Apply amazon exceptions to amazon cache, add 'Date'
         for date, expenses in amazon_cache.items():
             for expense in expenses:
@@ -173,6 +185,8 @@ class BViewApp(App):
                     expense['Category'] = exceptions_cache[id]
                 elif category in AMAZON_CATEGORIES:
                     expense['Category'] = AMAZON_CATEGORIES[category]
+                elif category not in BUDGET:
+                    expense['Category'] = 'Unknown Amazon'
                 expense['Cost'] = expense.pop('Item Total')
                 expense['Date'] = date
                 expense['Source'] = 'Amazon'
@@ -181,13 +195,6 @@ class BViewApp(App):
         dates = list(amazon_cache.keys())
         for date in dates: # convert all keys to datetime.date objects
             amazon_cache[datetime.datetime.strptime(date, DATE_FORMAT).date()] = amazon_cache.pop(date)
-        # Load emoney cache
-        emoney_cache = {}
-        try:
-            with open(EMONEY_CACHE_PATH) as f:
-                emoney_cache = json.load(f)
-        except:
-            print('Missing (or corrupt) AMAZON CACHE, "{}", using empty file'.format(EMONEY_CACHE_PATH))
         dates = list(emoney_cache.keys())
         for date in dates: # convert all keys to datetime.date objects
              emoney_cache[datetime.datetime.strptime(date, DATE_FORMAT).date()] = emoney_cache.pop(date)
@@ -197,6 +204,8 @@ class BViewApp(App):
                 id = expense.get('Order ID', None)
                 if id in exceptions_cache:
                     expense['Category'] = exceptions_cache[id]
+                elif category not in BUDGET:
+                    expense['Category'] = 'Unknown Emoney'
                 expense['Cost'] = expense.pop('Amount')
                 expense['Date'] = date
                 expense['Source'] = 'EMoney'
@@ -272,4 +281,5 @@ class BViewApp(App):
         self.dirty = False
 
 
-BViewApp().run()
+if __name__=='__main__':
+    BViewApp().run()

@@ -1,4 +1,6 @@
+#:import AppMenu bview.AppMenu
 #:set appbar_background_color (.95,.95,.93,1)
+#:set appmenu_background_color (.6,.6,.6,1)
 #:set even_row (.75,.73,.75,1)
 #:set odd_row (.87,.9,.9,1)
 #:set over_budget (.75,0,0,1)
@@ -11,6 +13,40 @@
 #
 # AppBar layout
 #
+<AppMenuButton@Button>:
+    background_normal: ''
+    background_down: ''
+    background_color: transparent
+    color: black
+    
+
+<AppMenu@DropDown>:
+    auto_width: False
+    size_hint_x: None
+    width: 200
+    canvas:
+        Color:
+            rgba: appmenu_background_color
+        Rectangle:
+            pos: self.pos
+            size: self.size
+    Widget:
+        size_hint_y: None
+        height: 10
+    AppMenuButton:
+        text: 'Refresh'
+        size_hint_y: None
+        height: 44
+        on_release: print('item1')
+    AppMenuButton:
+        text: 'Set Server IP'
+        size_hint_y: None
+        height: 44
+        on_release: print('item2')
+    Widget:
+        size_hint_y: None
+        height: 10
+        
 <AppBar@BoxLayout>:
     size_hint_y: None
     height: 50
@@ -42,7 +78,12 @@
         background_normal: 'drive.png' if app.dirty else ''
         background_down: ''
         on_press: app.write_exceptions() if app.dirty else None
-
+    Button:
+        size_hint: None, None
+        size: 50,50
+        background_color: appbar_background_color
+        background_normal: 'menu.png'
+        on_release: AppMenu().open(self)
 
 #
 # Category Expenses panel
