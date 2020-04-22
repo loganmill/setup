@@ -731,7 +731,7 @@ def main():
     parser.add_argument('-u', '--uncache', type=int, default=21)
     parser.add_argument('-e', '--end_date', help='format: "yy-mm-dd", defaults to yesterday, ignored if -a or -ma specified', type=str)
     parser.add_argument('-ma','--merge_amazon_csv',nargs=2,type=str)
-    parser.add_argument('-s','--server',nargs=1,type=int, default=5000)
+    parser.add_argument('-s','--server',nargs=1,type=int, default=0)
     args = parser.parse_args()
 
     if args.merge_amazon_csv:
@@ -748,6 +748,7 @@ def main():
         class HttpBudgetRequestHandler(BaseHTTPRequestHandler):
 
             def do_GET(self):
+                print('do get: {}'.format(self.path))
                 path = {'/amazon':AMAZON_CACHE_PATH,
                         '/emoney':EMONEY_CACHE_PATH,
                         '/exceptions':EXCEPTIONS_CACHE_PATH}.get(self.path, None)
@@ -755,7 +756,7 @@ def main():
                     with open(path) as f:
                         data = f.read().encode('ascii')
                 else:
-                    data = 'Unknown request'
+                    data = b'Unknown request'
                 self.send_response(200)
                 self.send_header('Content-type', 'text/plain')
                 #self.send_header('Content-type', 'application/json')
@@ -766,6 +767,7 @@ def main():
                 dst_write(data)
 
         def serve(*args):
+            print('serving at: {}'.format(port))
             server = HTTPServer(('', port), HttpBudgetRequestHandler)            
             server.serve_forever()
 

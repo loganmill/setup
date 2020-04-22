@@ -1,0 +1,304 @@
+#:import AppMenu budgie.AppMenu
+#:import platform kivy.utils.platform
+#:import sc budgie.sc
+#:set appbar_background_color (.95,.95,.93,1)
+#:set appmenu_background_color (.6,.6,.6,1)
+#:set even_row (.75,.73,.75,1)
+#:set odd_row (.87,.9,.9,1)
+#:set over_budget (.75,0,0,1)
+#:set black (0,0,0,1)
+#:set transparent (0,0,0,0)
+#:set white (1,1,1,1)
+#:set column_width 100
+#:set category_width 200
+#:set span_width 60
+
+
+#
+# AppBar layout
+#
+<AppMenuButton@Button>:
+    background_normal: ''
+    background_down: ''
+    background_color: transparent
+    color: black
+    
+
+<AppMenu@DropDown>:
+    auto_width: False
+    size_hint_x: None
+    width: sc(200)
+    canvas:
+        Color:
+            rgba: appmenu_background_color
+        Rectangle:
+            pos: self.pos
+            size: self.size
+    Widget:
+        size_hint_y: None
+        height: sc(10)
+    AppMenuButton:
+        text: 'Refresh'
+        size_hint_y: None
+        height: sc(44)
+        on_release: print('item1')
+    AppMenuButton:
+        text: 'Set Server IP'
+        size_hint_y: None
+        height: sc(44)
+        on_release: print('item2')
+    Widget:
+        size_hint_y: None
+        height: sc(10)
+        
+<AppBar@BoxLayout>:
+    size_hint_y: None
+    height: sc(50)
+    orientation: 'horizontal'
+    padding: sc(0,0,0,0)
+    dismiss: None # Called when back button pressed, if defined.
+    canvas:
+        Color:
+            rgb: appbar_background_color
+        Rectangle:
+            size: self.size
+            pos: self.pos
+    Button:
+        size_hint: None, None
+        size: sc(50,50)
+        background_color: appbar_background_color
+        background_normal: '' if not root.dismiss else 'back_android.png' if platform=='android' else 'back.png'
+        background_down: ''
+        on_press: root.dismiss() if root.dismiss else None
+    Widget:
+        size_hint_x: None
+        width: sc(50)
+    Label:
+        on_parent: root.title = self
+        text_size: self.size
+        markup: True
+        shorten: True
+        halign: 'center'
+        valign: 'middle'
+        color: black
+        font_size: sp(17)
+    Button:
+        size_hint: None, None
+        size: sc(50,50)
+        background_color: appbar_background_color
+        background_normal: '' if not app.dirty else 'cloud_android.png' if platform=='android' else 'cloud.png'
+        background_down: ''
+        on_press: app.write_exceptions() if app.dirty else None
+    Button:
+        size_hint: None, None
+        size: sc(50,50)
+        background_color: appbar_background_color
+        background_normal: 'menu_android.png' if platform=='android' else 'menu.png'
+        on_release: AppMenu().open(self)
+
+#
+# Category Expenses panel
+#
+
+<CategoryExpenses@ModalView>:
+    BoxLayout:
+        orientation: 'vertical'
+        AppBar:
+            id: bar
+            dismiss: lambda *args: root.dismiss()
+        ScrollView:
+            canvas.before:
+                Color:
+                    rgb: white
+                Rectangle:
+                    size: self.size
+                    pos: self.pos
+
+            do_scroll_x: True
+            bar_width: sc(20)
+            scroll_type: ['bars', 'content']
+            BoxLayout:
+                spacing: sc(20)
+                orientation: 'vertical'
+                size_hint_y: None
+                on_children: self.height = sum([child.height+self.spacing for child in self.children])
+                id: expense_list
+
+<Expense@BoxLayout>:
+    canvas.before:
+        Color:
+            rgba: even_row if self.parent and self.parent.children.index(self) % 2 else odd_row
+        Rectangle:
+            size: self.width, self.height + (sc(30) if self.parent and self.parent.children[-1] == self else sc(20))
+            pos: self.x, self.y - sc(10)
+    padding: sc(0,0,20,0)
+    size_hint_y: None
+    orientation: 'vertical'
+    height: sc(100)
+
+<ExpenseField@BoxLayout>:
+    orientation: 'horizontal'
+    canvas.before:
+        Color:
+            rgba: (1,1,1,.15) if self.parent and self.parent.children.index(self) % 2 else transparent
+        Rectangle:
+            size: self.size
+            pos: self.pos
+    Label:
+        on_parent: root.key = self
+        color: black
+        size_hint_x: None
+        width: sc(200)
+        text_size: self.size
+        halign: 'right'
+        valign: 'middle'
+    Label:
+        id: value
+        padding: sc(10,0)
+        on_parent: root.value = self
+        color: black
+        text_size: self.size
+        halign: 'left'
+        shorten: True
+        valign: 'middle'
+        
+
+<ColumnLabel@Label>:
+    color: black
+    size_hint_x: None
+    width: sc(column_width)
+    text_size: self.size
+    halign: 'right'
+    valign: 'middle'
+
+<CategoryRowLabel@ColumnLabel>:
+    color: over_budget if self.parent and self.parent.over_budget else black
+  
+<CategoryRow@ButtonBehavior+BoxLayout>:
+    orientation: 'horizontal'
+    size_hint_y: None
+    height: sc(50)
+    spacing: sc(10)
+    padding: sc(20,0)
+    details: None
+    over_budget: False
+    canvas.before:
+        Color:
+            rgb: even_row if app.indexes and self.details and app.indexes[self.details['category']] % 2  else odd_row
+        Rectangle:
+            size: self.size
+            pos: self.pos
+    Widget:
+    CategoryRowLabel:
+        id: category
+        width: sc(category_width)
+        halign: 'right'
+    CategoryRowLabel:
+        id: available
+    CategoryRowLabel:
+        id: total
+    CategoryRowLabel:
+        id: limit
+    CategoryRowLabel:
+        width: sc(span_width)
+        id: span
+    Widget:
+
+#
+# Category Chooser Panel
+#
+
+<CategoryChooser@ModalView>:
+    BoxLayout:
+        orientation: 'vertical'
+        AppBar:
+            id: bar
+            dismiss: lambda *args: root.dismiss()
+        ScrollView:
+            canvas.before:
+                Color:
+                    rgb: white
+                Rectangle:
+                    size: self.size
+                    pos: self.pos
+
+            do_scroll_x: True
+            bar_width: sc(20)
+            scroll_type: ['bars', 'content']
+            BoxLayout:
+                orientation: 'vertical'
+                size_hint_y: None
+                on_children: self.height = sum([child.height+self.spacing for child in self.children])
+                id: category_list
+
+
+<CategoryChooserRow@ButtonBehavior+Label>:
+    color: black
+    size_hint_y: None
+    height: sc(40)
+    text_size: self.size
+    halign: 'center'
+    valign: 'middle'
+    canvas.before:
+        Color:
+            rgba: even_row if self.parent and self.parent.children.index(self) % 2 else odd_row
+        Rectangle:
+            size: self.size
+            pos: self.pos
+
+#
+# Main Panel
+#
+
+BoxLayout:
+    on_parent: app.root = self
+    orientation: 'vertical'
+    AppBar:
+        id: bar
+    BoxLayout:
+        orientation: 'horizontal'
+        size_hint_y: None
+        height: sc(20)
+        spacing: sc(10)
+        padding: sc(20,0,20,0)
+        canvas.before:
+            Color:
+                rgb: white
+            Rectangle:
+                size: self.size
+                pos: self.pos
+        Widget:
+        ColumnLabel:
+            width: sc(category_width)
+            halign: 'right'
+            text: 'Category'
+        ColumnLabel:
+            text: 'Available'
+        ColumnLabel:
+            text: 'Total'
+        ColumnLabel:
+            text: 'Limit'
+        ColumnLabel:
+            text: 'Span'
+            width: sc(span_width)
+        Widget:
+    RecycleView:
+        on_parent: app.layout = self
+        viewclass: 'CategoryRow'
+        canvas.before:
+            Color:
+                rgb: white
+            Rectangle:
+                size: self.size
+                pos: self.pos
+        RecycleBoxLayout:
+            do_scroll_y: True
+            default_size: None, sc(50)
+            default_size_hint: 1, None
+            size_hint_y: None
+            height: self.minimum_height
+            orientation: 'vertical'
+
+
+
+
