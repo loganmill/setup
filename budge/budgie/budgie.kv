@@ -10,7 +10,7 @@
 #:set transparent (0,0,0,0)
 #:set white (1,1,1,1)
 #:set column_width 100
-#:set category_width 200
+#:set category_width 220
 #:set span_width 60
 
 
@@ -81,7 +81,7 @@
         halign: 'center'
         valign: 'middle'
         color: black
-        font_size: sp(17)
+        font_size: sp(18)
     Button:
         size_hint: None, None
         size: sc(50,50)
@@ -167,6 +167,7 @@
     color: black
     size_hint_x: None
     width: sc(column_width)
+    font_size: sp(18)
     text_size: self.size
     halign: 'right'
     valign: 'middle'
@@ -253,51 +254,66 @@
 BoxLayout:
     on_parent: app.root = self
     orientation: 'vertical'
+    on_size: content.width = max(self.width , header.minimum_width)
+    canvas.before:
+        Color:
+            rgba: white
+        Rectangle:
+            size: self.size
+            pos: self.pos
     AppBar:
         id: bar
-    BoxLayout:
-        orientation: 'horizontal'
-        size_hint_y: None
-        height: sc(20)
-        spacing: sc(10)
-        padding: sc(20,0,20,0)
-        canvas.before:
-            Color:
-                rgb: white
-            Rectangle:
-                size: self.size
-                pos: self.pos
-        Widget:
-        ColumnLabel:
-            width: sc(category_width)
-            halign: 'right'
-            text: 'Category'
-        ColumnLabel:
-            text: 'Available'
-        ColumnLabel:
-            text: 'Total'
-        ColumnLabel:
-            text: 'Limit'
-        ColumnLabel:
-            text: 'Span'
-            width: sc(span_width)
-        Widget:
-    RecycleView:
-        on_parent: app.layout = self
-        viewclass: 'CategoryRow'
-        canvas.before:
-            Color:
-                rgb: white
-            Rectangle:
-                size: self.size
-                pos: self.pos
-        RecycleBoxLayout:
-            do_scroll_y: True
-            default_size: None, sc(50)
-            default_size_hint: 1, None
-            size_hint_y: None
-            height: self.minimum_height
+    ScrollView:
+        do_scroll_x: True
+        do_scroll_y: False
+        BoxLayout: # provides horizontal scrolling from header
+            id: content
             orientation: 'vertical'
+            size_hint_x: None
+            width: 0
+            BoxLayout:
+                id: header
+                orientation: 'horizontal'
+                size_hint_y: None
+                height:sc(50)
+                spacing: sc(10)
+                padding: sc(20,0,20,0)
+                canvas.before:
+                    Color:
+                        rgb: white
+                    Rectangle:
+                        size: self.size
+                        pos: self.pos
+                Widget:
+                ColumnLabel:
+                    width: sc(category_width)
+                    halign: 'right'
+                    text: 'Category'
+                ColumnLabel:
+                    text: 'Available'
+                ColumnLabel:
+                    text: 'Total'
+                ColumnLabel:
+                    text: 'Limit'
+                ColumnLabel:
+                    text: 'Span'
+                    width: sc(span_width)
+                Widget:
+            RecycleView:
+                on_parent: app.layout = self
+                viewclass: 'CategoryRow'
+                canvas.before:
+                    Color:
+                        rgb: white
+                    Rectangle:
+                        size: self.size
+                        pos: self.pos
+                RecycleBoxLayout:
+                    default_size: None, sc(50)
+                    default_size_hint: 1, None
+                    size_hint_y: None
+                    height: self.minimum_height
+                    orientation: 'vertical'
 
 
 

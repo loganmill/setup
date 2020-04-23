@@ -23,6 +23,8 @@ import pdb
 import requests
 from re import sub
 
+ANDROID = True  # for desktop testing of android
+
 from budget_defs import *
 
 # Only the following keys will be extracted from corresponding cache:
@@ -161,24 +163,23 @@ class BudgieApp(App):
         Clock.schedule_once(self.populate, 0)
         
     def get_cache(self, path):
-       if platform == 'android':
-           path = None
+       if platform == 'android' or ANDROID:
            try:
-               path = { 'amazon': 'http://10.0.0.129:5000/amazon',
-                        'emoney': 'http://10.0.0.129:5000/emoney',
-                        'exceptions': 'http://10.0.0.129:5000/exceptions'
+               full_path = { 'amazon': 'http://10.0.0.129:5000/amazon',
+                             'emoney': 'http://10.0.0.129:5000/emoney',
+                             'exceptions': 'http://10.0.0.129:5000/exceptions'
                       }[path]
-               response = requests.get(path, timeout=1.0)
+               response = requests.get(full_path, timeout=1.0)
                return json.loads(response.text)
            except Exception as ex:
                print('Budgie failed to load data from cloud: {} {}'.format(path, ex))
                pass
            try:
-               path = { 'amazon': 'http://loganmill.net:5000/amazon',
-                        'emoney': 'http://loganmill.net:5000/emoney',
-                        'exceptions': 'http://loganmill.net:5000/exceptions'
+               full_path = { 'amazon': 'http://loganmill.net:5000/amazon',
+                             'emoney': 'http://loganmill.net:5000/emoney',
+                             'exceptions': 'http://loganmill.net:5000/exceptions'
                       }[path]
-               response = requests.get(path, timeout=3.0)
+               response = requests.get(full_path, timeout=3.0)
                return json.loads(response.text)
            except Exception as ex:
                print('Budgie failed to load data from cloud: {}'.format(path, ex))
@@ -186,11 +187,11 @@ class BudgieApp(App):
                sys.exit(0)
        else: # platform == linux, windows
            try:
-               path = { 'amazon': AMAZON_CACHE_PATH,
-                        'emoney': EMONEY_CACHE_PATH,
-                        'exceptions': EXCEPTIONS_CACHE_PATH
+               full_path = { 'amazon': AMAZON_CACHE_PATH,
+                             'emoney': EMONEY_CACHE_PATH,
+                             'exceptions': EXCEPTIONS_CACHE_PATH
                       }[path]
-               with open(path) as f:
+               with open(full_path) as f:
                    return json.load(f)
            except:
                print('Budgie no cache, "{}", giving up'.format(path))
@@ -307,15 +308,28 @@ class BudgieApp(App):
         self.populate()
 
     def write_exceptions(self):
-        try:
-            with open(EXCEPTIONS_CACHE_PATH + '.tmp','w+') as f:
-                json.dump(self.exceptions_cache, f, indent=2)
-            os.rename(EXCEPTIONS_CACHE_PATH + '.tmp', EXCEPTIONS_CACHE_PATH)
-        except:
-            popup = Popup(title='Failed to write exceptions to: {}'.format(EXCEPTIONS_CACHE_PATH))
+        if platform == 'android' or ANDROID:
+            try:
+                response = requests.put('http://10.0.0.129:5000/post_exceptions', data=json.dumps(self.exceptions_cache), timeout=1.0)
+            except Exception as ex1:
+                try:
+                    response = requests.put('http://loganmill.net/post_exceptions', data=json.dumps(self.exceptions_cache), timeout=1.0)
+                except Exception as ex2:
+                    error = '{}\n{}'.format(ex1, ex2)
+        else:
+            try:
+                with open(EXCEPTIONS_CACHE_PATH + '.tmp','w+') as f:
+                    json.dump(self.exceptions_cache, f, indent=2)
+                os.rename(EXCEPTIONS_CACHE_PATH + '.tmp', EXCEPTIONS_CACHE_PATH)
+            except Exceptions as ex:
+                error = '{}'.format(ex)
+                
+        if error:
+            popup = Popup(title='Failed to write exceptions because: {}'.format(error))
             popup.add_widget(Button(text='OK'))
             popup.open()
-        self.dirty = False
+        else:
+            self.dirty = False
 
 
 if __name__=='__main__':
