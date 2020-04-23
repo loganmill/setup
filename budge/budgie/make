@@ -30,6 +30,11 @@ if 'clean' in sys.argv:
 if 'apk' in sys.argv:
     print(subprocess.check_output('docker run --rm -v $HOME/.buildozer:/home/user/.buildozer -v $PWD:/home/user/hostcwd kivy/buildozer android debug', shell=True))
 
-if 'run' in sys.argv:
-    print(subprocess.check_output('cd bin ; adb install -r *.apk ; cd ..', shell=True))
+
+if 'rep' in sys.argv:
+    print(subprocess.check_output('adb uninstall com.tectosoft.budgie', shell=True))
+    print(subprocess.check_output('cd bin ; adb install *.apk ; cd ..', shell=True))
+
+if 'ins' in sys.argv:
+    print(subprocess.check_output('cd bin ; adb install  *.apk ; cd ..', shell=True))
 

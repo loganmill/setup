@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from kivy.app import App
 from kivy.core.window import Window
+from kivy.graphics import *
 from kivy.uix.widget import Widget
 from kivy.uix.button import Button
 from kivy.uix.dropdown import DropDown
@@ -39,6 +40,38 @@ def sc(*args):
     return [dp(arg) for arg in args] if len(args) > 1 else \
             dp(args[0])
 
+
+class GraphPanel(ModalView):
+
+    def on_open(self, *args):
+        surface = self.ids['surface']
+        date = datetime.date.today()
+        sums = []
+        app = App.get_running_app()
+        date_cache = app.date_cache
+        totals = {}
+        for x in range(300):
+            totals[date] = sum([expense.get('Cost', 0) for expense in date_cache.get(date, {})])
+            date -= datetime.timedelta(days=1)
+        max_expense = max(totals.values())
+        min_expense = min(totals.values())
+        if min_expense < 0:
+            max_expense = max(max_expense, -min_expense)
+        max_height = 500
+        x = sc(50) 
+        y = sc(50)
+        surface.width = x + len(totals) * sc(8) + x
+        with surface.canvas:
+            Color(rgba=(.5,.5,.5,1))
+            Rectangle(size=surface.size, pos=surface.pos)
+            for date, total in totals.items():
+                Color(rgba=(0,0,1,1))
+                if total < 0:
+                    print(date, total)
+                    total = -total
+                    Color(rgba=(0,1,0,1))
+                Line(points=[x, y, x, y+int(max_height * (total/max_expense))], width=sc(4))
+                x += sc(8)                       
 
 class CategoryExpenses(ModalView):
 
@@ -136,6 +169,7 @@ class Expense(ButtonBehavior, BoxLayout):
             target_expense['Category'] = new_category
             category_cache[current_category]['expenses'] = [exp for exp in current_category_expenses if exp['Order ID'] != oid]
             category_cache[new_category]['expenses'].append(target_expense)
+            print('Budgie: set app dirty')
             app.dirty = True
             app.populate()
             chooser.dismiss()
@@ -248,6 +282,7 @@ class BudgieApp(App):
             if date in emoney_cache:
                 expenses.extend(emoney_cache.pop(date))
         merged_cache.update(emoney_cache)
+        self.date_cache = merged_cache
         # Create index by 'Category':
         period = self.period
         end_date = datetime.date.today() - datetime.timedelta(days=1)
@@ -308,6 +343,7 @@ class BudgieApp(App):
         self.populate()
 
     def write_exceptions(self):
+        error = None
         if platform == 'android' or ANDROID:
             try:
                 response = requests.put('http://10.0.0.129:5000/post_exceptions', data=json.dumps(self.exceptions_cache), timeout=1.0)

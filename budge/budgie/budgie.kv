@@ -1,6 +1,7 @@
 #:import AppMenu budgie.AppMenu
-#:import platform kivy.utils.platform
 #:import sc budgie.sc
+#:import GraphPanel budgie.GraphPanel
+#:import platform kivy.utils.platform
 #:set appbar_background_color (.95,.95,.93,1)
 #:set appmenu_background_color (.6,.6,.6,1)
 #:set even_row (.75,.73,.75,1)
@@ -12,7 +13,6 @@
 #:set column_width 100
 #:set category_width 220
 #:set span_width 60
-
 
 #
 # AppBar layout
@@ -38,10 +38,11 @@
         size_hint_y: None
         height: sc(10)
     AppMenuButton:
-        text: 'Refresh'
+        text: 'Graph'
         size_hint_y: None
         height: sc(44)
-        on_release: print('item1')
+        on_press: GraphPanel().open()
+        on_press: root.dismiss()
     AppMenuButton:
         text: 'Set Server IP'
         size_hint_y: None
@@ -95,6 +96,30 @@
         background_color: appbar_background_color
         background_normal: 'menu_android.png' if platform=='android' else 'menu.png'
         on_release: AppMenu().open(self)
+
+#
+# Graph panel
+#
+<GraphPanel@ModalView>:
+    BoxLayout:
+        orientation: 'vertical'
+        AppBar:
+            id: bar
+            dismiss: lambda *args: root.dismiss()
+        ScrollView:
+            canvas.before:
+                Color:
+                    rgb: white
+                Rectangle:
+                    size: self.size
+                    pos: self.pos
+            do_scroll_x: True
+            bar_width: sc(20)
+            scroll_type: ['bars', 'content']
+            RelativeLayout:
+                size_hint_x: None
+                width: 100
+                id: surface
 
 #
 # Category Expenses panel
