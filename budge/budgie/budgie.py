@@ -162,6 +162,7 @@ class BudgieApp(App):
         
     def get_cache(self, path):
        if platform == 'android':
+           path = None
            try:
                path = { 'amazon': 'http://10.0.0.129:5000/amazon',
                         'emoney': 'http://10.0.0.129:5000/emoney',
@@ -169,7 +170,8 @@ class BudgieApp(App):
                       }[path]
                response = requests.get(path, timeout=1.0)
                return json.loads(response.text)
-           except:
+           except Exception as ex:
+               print('Budgie failed to load data from cloud: {} {}'.format(path, ex))
                pass
            try:
                path = { 'amazon': 'http://loganmill.net:5000/amazon',
@@ -178,8 +180,8 @@ class BudgieApp(App):
                       }[path]
                response = requests.get(path, timeout=3.0)
                return json.loads(response.text)
-           except:
-               print('Budgie failed to load data from cloud')
+           except Exception as ex:
+               print('Budgie failed to load data from cloud: {}'.format(path, ex))
                # need a popup alert here
                sys.exit(0)
        else: # platform == linux, windows
