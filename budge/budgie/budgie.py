@@ -101,7 +101,7 @@ class GraphPanel(ModalView):
                 Line(points=[x, y, x, y+int(max_height * (total/max_expense))], width=sc(2))
                 if date.day == 1:
                     Color(rgba=(0,0,0,1))
-                    Rectangle(size=(25,25),
+                    Rectangle(size=sc(25,25),
                               pos=(x, y - sc(30)),
                               texture=texture_from_label(text=date.strftime('%b %y')))
                 x += sc(8)
