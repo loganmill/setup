@@ -14,16 +14,58 @@
 #:set category_width 220
 #:set span_width 60
 
+
 #
-# AppBar layout
+# common superclass for all labels, buttons
 #
-<AppMenuButton@Button>:
+<BLabel@Label>:  # budgie label
+    on_parent: root.title = self
+    text_size: self.size
+    markup: True
+    shorten: True
+    halign: 'center'
+    valign: 'middle'
+    color: black
+
+<BButton@Button>:  # budgie button
     background_normal: ''
     background_down: ''
     background_color: transparent
     color: black
-    
 
+<BDButton@BButton>: # budgie dialog button
+    font_size: sp(20)
+    background_color: appbar_background_color
+
+1#
+# notification dialog
+#
+<BDialog@ModalView>:
+    background: ''
+    background_color: 1,1,1,1    
+    message: ''
+    buttons: []
+    on_message: message_label.text = self.message
+    on_buttons: for button in self.buttons: dialog_buttons.add_widget(button) 
+    BoxLayout:
+        orientation: 'vertical'
+        padding: sc(20,20,20,20)
+        spacing: sc(20)
+        BLabel:
+            id: message_label
+            font_size: sp(18)
+            shorten: False
+        BoxLayout:
+            id: dialog_buttons
+            size_hint_y: None
+            height: sc(50)
+            orientation: 'horizontal'
+            spacing: sc(20)
+            
+#
+# AppBar layout
+#
+    
 <AppMenu@DropDown>:
     auto_width: False
     size_hint_x: None
@@ -37,13 +79,13 @@
     Widget:
         size_hint_y: None
         height: sc(10)
-    AppMenuButton:
+    BButton:
         text: 'Graph'
         size_hint_y: None
         height: sc(44)
         on_press: GraphPanel().open()
         on_press: root.dismiss()
-    AppMenuButton:
+    BButton:
         text: 'Set Server IP'
         size_hint_y: None
         height: sc(44)
@@ -64,33 +106,25 @@
         Rectangle:
             size: self.size
             pos: self.pos
-    Button:
+    BButton:
         size_hint: None, None
         size: sc(50,50)
         background_color: appbar_background_color
         background_normal: '' if not root.dismiss else 'back_android.png' if platform=='android' else 'back.png'
-        background_down: ''
         on_press: root.dismiss() if root.dismiss else None
     Widget:
         size_hint_x: None
         width: sc(50)
-    Label:
+    BLabel:
         on_parent: root.title = self
-        text_size: self.size
-        markup: True
-        shorten: True
-        halign: 'center'
-        valign: 'middle'
-        color: black
         font_size: sp(18)
-    Button:
+    BButton:
         size_hint: None, None
         size: sc(50,50)
         background_color: appbar_background_color
         background_normal: '' if not app.dirty else 'cloud_android.png' if platform=='android' else 'cloud.png'
-        background_down: ''
         on_press: app.write_exceptions() if app.dirty else None
-    Button:
+    BButton:
         size_hint: None, None
         size: sc(50,50)
         background_color: appbar_background_color
@@ -169,33 +203,23 @@
         Rectangle:
             size: self.size
             pos: self.pos
-    Label:
+    BLabel:
         on_parent: root.key = self
-        color: black
         size_hint_x: None
         width: sc(200)
-        text_size: self.size
         halign: 'right'
-        valign: 'middle'
-    Label:
+    BLabel:
         id: value
         padding: sc(10,0)
         on_parent: root.value = self
-        color: black
-        text_size: self.size
         halign: 'left'
         shorten: True
-        valign: 'middle'
-        
 
-<ColumnLabel@Label>:
-    color: black
+<ColumnLabel@BLabel>:
     size_hint_x: None
     width: sc(column_width)
     font_size: sp(18)
-    text_size: self.size
     halign: 'right'
-    valign: 'middle'
 
 <CategoryRowLabel@ColumnLabel>:
     color: over_budget if self.parent and self.parent.over_budget else black
@@ -258,13 +282,10 @@
                 id: category_list
 
 
-<CategoryChooserRow@ButtonBehavior+Label>:
-    color: black
+<CategoryChooserRow@ButtonBehavior+BLabel>:
     size_hint_y: None
     height: sc(40)
-    text_size: self.size
-    halign: 'center'
-    valign: 'middle'
+    color: black
     canvas.before:
         Color:
             rgba: even_row if self.parent and self.parent.children.index(self) % 2 else odd_row

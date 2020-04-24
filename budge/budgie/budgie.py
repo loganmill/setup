@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 from kivy.app import App
 from kivy.core.window import Window
 from kivy.graphics import *
@@ -13,20 +12,22 @@ from kivy.uix.modalview import ModalView
 from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.behaviors import ButtonBehavior
-from kivy.properties import BooleanProperty
-from kivy.properties import ObjectProperty
+from kivy.properties import *
 from kivy.utils import platform
 from kivy.clock import Clock
 from kivy.metrics import dp, sp
+from budget_defs import *
 import copy
 import json
 import pdb
 import requests
 from re import sub
+import time
 
 ANDROID = True  # for desktop testing of android
 
-from budget_defs import *
+LAN_ADDRESS = 'http://10.0.0.129:5000'
+WAN_ADDRESS = 'http://loganmill.net:5000'
 
 # Only the following keys will be extracted from corresponding cache:
 AMAZON_EXPENSE_KEYS = ['Date', 'Cost', 'Title', 'Category', 'Shipping Address City','Buyer Name',  'Source', 'Order ID']
@@ -40,6 +41,15 @@ def sc(*args):
     return [dp(arg) for arg in args] if len(args) > 1 else \
             dp(args[0])
 
+
+class BButton(Button):
+     pass
+ 
+class BDButton(BButton):
+     pass
+
+class BDialog(ModalView):
+    pass
 
 class GraphPanel(ModalView):
 
@@ -57,7 +67,7 @@ class GraphPanel(ModalView):
         min_expense = min(totals.values())
         if min_expense < 0:
             max_expense = max(max_expense, -min_expense)
-        max_height = 500
+        max_height = sp(500)
         x = sc(50) 
         y = sc(50)
         surface.width = x + len(totals) * sc(8) + x
@@ -169,7 +179,6 @@ class Expense(ButtonBehavior, BoxLayout):
             target_expense['Category'] = new_category
             category_cache[current_category]['expenses'] = [exp for exp in current_category_expenses if exp['Order ID'] != oid]
             category_cache[new_category]['expenses'].append(target_expense)
-            print('Budgie: set app dirty')
             app.dirty = True
             app.populate()
             chooser.dismiss()
@@ -193,49 +202,47 @@ class BudgieApp(App):
         super(BudgieApp, self).__init__(*args, **kwargs)
         Window.bind(on_request_close=self.exit_check)
         self.period = 1
-        self.load_cache(self, *args)
-        Clock.schedule_once(self.populate, 0)
+        Clock.schedule_once(self.load_cache, 0)
         
     def get_cache(self, path):
-       if platform == 'android' or ANDROID:
-           try:
-               full_path = { 'amazon': 'http://10.0.0.129:5000/amazon',
-                             'emoney': 'http://10.0.0.129:5000/emoney',
-                             'exceptions': 'http://10.0.0.129:5000/exceptions'
-                      }[path]
-               response = requests.get(full_path, timeout=1.0)
-               return json.loads(response.text)
-           except Exception as ex:
-               print('Budgie failed to load data from cloud: {} {}'.format(path, ex))
-               pass
-           try:
-               full_path = { 'amazon': 'http://loganmill.net:5000/amazon',
-                             'emoney': 'http://loganmill.net:5000/emoney',
-                             'exceptions': 'http://loganmill.net:5000/exceptions'
-                      }[path]
-               response = requests.get(full_path, timeout=3.0)
-               return json.loads(response.text)
-           except Exception as ex:
-               print('Budgie failed to load data from cloud: {}'.format(path, ex))
-               # need a popup alert here
-               sys.exit(0)
-       else: # platform == linux, windows
-           try:
-               full_path = { 'amazon': AMAZON_CACHE_PATH,
-                             'emoney': EMONEY_CACHE_PATH,
-                             'exceptions': EXCEPTIONS_CACHE_PATH
-                      }[path]
-               with open(full_path) as f:
-                   return json.load(f)
-           except:
-               print('Budgie no cache, "{}", giving up'.format(path))
-               sys.exit(0)
+        if platform == 'android' or ANDROID:
+            err = ''
+            for address in (LAN_ADDRESS, WAN_ADDRESS):
+               full_path = { 'amazon': address + '/amazon',
+                             'emoney': address + '/emoney',
+                             'exceptions': address + '/exceptions'
+                           }.get(path, None)
+               if path:
+                  try: 
+                      response = requests.get(full_path, timeout=3.0)
+                      return json.loads(response.text)
+                  except Exception as ex:
+                      err += '{}\n'.format(ex)
+            raise Exception(err)
+        else: # platform == linux, windows
+            full_path = { 'amazon': AMAZON_CACHE_PATH,
+                          'emoney': EMONEY_CACHE_PATH,
+                          'exceptions': EXCEPTIONS_CACHE_PATH
+                        }.get(path, None)
+            with open(full_path) as f:
+                return json.load(f)
 
     def load_cache(self, *args):
-        amazon_cache = self.get_cache('amazon')
-        emoney_cache = self.get_cache('emoney')
-        exceptions_cache = self.get_cache('exceptions')
-        
+        while True:
+            try:
+                amazon_cache = self.get_cache('amazon')
+                emoney_cache = self.get_cache('emoney')
+                exceptions_cache = self.get_cache('exceptions')
+                break
+            except Exception as ex:
+                dialog = BDialog()
+                dialog.message = 'Failed to load cache:\n\n{}'.format(ex)
+                dialog.buttons = [BDButton(text='Retry', on_press=lambda *args:
+                                 [Clock.schedule_once(dialog.dismiss), Clock.schedule_once(self.load_cache, 0.5)]),
+                                  BDButton(text='Exit', on_press=lambda *args: sys.exit(0))]
+                dialog.open()
+                return
+                
         # Apply amazon exceptions to amazon cache, add 'Date'
         for date, expenses in amazon_cache.items():
             for expense in expenses:
@@ -314,7 +321,7 @@ class BudgieApp(App):
                 category_cache[category] = details
         self.category_cache = category_cache
         self.exceptions_cache = exceptions_cache
-
+        self.populate()
 
     def populate(self, *args):
         self.layout.data = []
@@ -325,15 +332,18 @@ class BudgieApp(App):
         self.root.ids['bar'].title.text = '{}'.format(
              (self.max_date + datetime.timedelta(days=self.period)).strftime('%a %b %d %Y'))
 
+
+
+    def dialog(self, *args):
+        dialog = Dialog()
+
     def exit_check(self, *args):
-        if not self.dirty:
-           return False
-        popup = Popup(title="Buddy has unsaved changes. Really exit?", size_hint=(.6, None), height=120)
-        layout = BoxLayout(orientation='horizontal', padding=(10,10,10,10), spacing=10)
-        layout.add_widget(Button(text='Cancel', on_press=popup.dismiss))
-        layout.add_widget(Button(text='Exit', on_press=self.stop))
-        popup.add_widget(layout)
-        popup.open()
+        if self.dirty:
+            dialog = BDialog()
+            dialog.message = 'Budgie has unsaved changes.\n\nReally exit?'
+            dialog.buttons = [BDButton(text='Cancel', on_press=lambda *args: Clock.schedule_once(dialog.dismiss)),
+                              BDButton(text='Exit', on_press=lambda *args: sys.exit(0))]
+            dialog.open()
         return True
 
     def set_range(self, months):
@@ -346,12 +356,12 @@ class BudgieApp(App):
         error = None
         if platform == 'android' or ANDROID:
             try:
-                response = requests.put('http://10.0.0.129:5000/post_exceptions', data=json.dumps(self.exceptions_cache), timeout=1.0)
+                response = requests.put('{}/put_exceptions'.format(LAN_ADDRESS), data=json.dumps(self.exceptions_cache), timeout=1.0)
             except Exception as ex1:
                 try:
-                    response = requests.put('http://loganmill.net/post_exceptions', data=json.dumps(self.exceptions_cache), timeout=1.0)
+                    response = requests.put('{}/put_exceptions'.format(WAN_ADDRESS), data=json.dumps(self.exceptions_cache), timeout=1.0)
                 except Exception as ex2:
-                    error = '{}\n{}'.format(ex1, ex2)
+                    error = 'Ex1:\n{}\n\nEx2:\n{}'.format(ex1, ex2)
         else:
             try:
                 with open(EXCEPTIONS_CACHE_PATH + '.tmp','w+') as f:
