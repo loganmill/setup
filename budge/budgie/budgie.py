@@ -1,4 +1,5 @@
 from kivy.app import App
+from kivy.core.text import Label as CoreLabel
 from kivy.core.window import Window
 from kivy.graphics import *
 from kivy.uix.widget import Widget
@@ -6,7 +7,6 @@ from kivy.uix.button import Button
 from kivy.uix.dropdown import DropDown
 from kivy.uix.togglebutton import ToggleButton
 from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.dropdown import DropDown
 from kivy.uix.label import Label
 from kivy.uix.modalview import ModalView
 from kivy.uix.popup import Popup
@@ -34,12 +34,23 @@ AMAZON_EXPENSE_KEYS = ['Date', 'Cost', 'Title', 'Category', 'Shipping Address Ci
 EMONEY_EXPENSE_KEYS = ['Date', 'Cost', 'Description', 'Account', 'Category', 'Source', 'Order ID']
 # Following merges previous 2: used for ordering on-screen presentation
 EXPENSE_KEYS = ['Date', 'Cost', 'Title', 'Description', 'Category', 'Account', 'Shipping Address City', 'Buyer Name', 'Source', 'Order ID']
-
-# for note 8, sc multiplies sizes by 3.5 
+NON_EXPENSES = ['Income', 'Interest Income', 'Credit Card Payment', 'Investment Savings']
 
 def sc(*args):
-    return [dp(arg) for arg in args] if len(args) > 1 else \
-            dp(args[0])
+    # convenience for scaling
+    return [dp(arg) for arg in args] if len(args) > 1 else dp(args[0])
+
+def texture_from_label(**kwargs):
+    # This function creates Label, then returns its texture.
+    # Provide it with the same arguments you would use for a kivy.uix.Label.
+    # Design purpose is for putting text into canvas, for example:
+    # canvas:
+    #    Rectangle:
+    #        size: 100, 100
+    #        texture: texture_from_label(text='hello', color=(1,1,1))
+    l = CoreLabel(**kwargs)
+    l.refresh()
+    return l.texture
 
 
 class BButton(Button):
@@ -53,35 +64,64 @@ class BDialog(ModalView):
 
 class GraphPanel(ModalView):
 
+    @classmethod
+    def launch(*args):
+        GraphPanel().open()
+        
     def on_open(self, *args):
         surface = self.ids['surface']
-        date = datetime.date.today()
+        date = datetime.date.today() - datetime.timedelta(days=365)
         sums = []
         app = App.get_running_app()
         date_cache = app.date_cache
         totals = {}
-        for x in range(300):
-            totals[date] = sum([expense.get('Cost', 0) for expense in date_cache.get(date, {})])
-            date -= datetime.timedelta(days=1)
+        for x in range(365):
+            totals[date] = sum([expense.get('Cost', 0) \
+                  for expense in date_cache.get(date, {})
+                      if expense['Category'] not in NON_EXPENSES])
+            date += datetime.timedelta(days=1)
         max_expense = max(totals.values())
         min_expense = min(totals.values())
         if min_expense < 0:
             max_expense = max(max_expense, -min_expense)
-        max_height = sp(500)
+        max_height = sp(400)
+        baseline = sc(50)
         x = sc(50) 
-        y = sc(50)
-        surface.width = x + len(totals) * sc(8) + x
+        y = baseline
+        surface.width = x + len(totals) * sc(8) + x + sc(100)
+        self.ids['scroller'].scroll_x = 1
         with surface.canvas:
             Color(rgba=(.5,.5,.5,1))
             Rectangle(size=surface.size, pos=surface.pos)
             for date, total in totals.items():
                 Color(rgba=(0,0,1,1))
                 if total < 0:
-                    print(date, total)
                     total = -total
                     Color(rgba=(0,1,0,1))
-                Line(points=[x, y, x, y+int(max_height * (total/max_expense))], width=sc(4))
-                x += sc(8)                       
+                Line(points=[x, y, x, y+int(max_height * (total/max_expense))], width=sc(2))
+                if date.day == 1:
+                    Color(rgba=(0,0,0,1))
+                    Rectangle(size=(25,25),
+                              pos=(x, y - sc(30)),
+                              texture=texture_from_label(text=date.strftime('%b %y')))
+                x += sc(8)
+            # max daily budget line
+            Color(rgba=(1,0,0,1))
+            Line(points=[sc(50), max_height + baseline, x, max_height + baseline], width=sc(1))
+            Color(rgba=(0,0,0,1))
+            Rectangle(size=sc(100,24),
+                pos=(x, max_height-sc(12) + sc(50)),
+                texture=texture_from_label(text='${:.2f}'.format(max_expense)))
+            # budgeted daily budget line
+            budget_goal = sum([item['limit'] / item['span'] for item in BUDGET.values()])
+            budget_height = int(max_height * (budget_goal/max_expense)) + baseline
+            Color(rgba=(0,1,0,1))
+            Line(points=[sc(50), budget_height, x, budget_height], width=sc(1))
+            Color(rgba=(0,0,0,1))
+            Rectangle(size=sc(100,24),
+                pos=(x, budget_height-sc(12)),
+                texture=texture_from_label(text='${:.2f}'.format(budget_goal)))
+
 
 class CategoryExpenses(ModalView):
 
@@ -143,9 +183,6 @@ class CategoryChooserRow(ButtonBehavior, Label):
 class CategoryChooser(ModalView):
     pass
 
-class AppMenu(DropDown):
-     pass
-
 class ExpenseField(BoxLayout):
 
     def __init__(self, key, value, *args, **kwargs):     
@@ -168,14 +205,13 @@ class Expense(ButtonBehavior, BoxLayout):
         chooser = None
         expense = self.expense
         
-        def set_category(button):
+        def set_category(new_category):
             app = App.get_running_app()
             category_cache = app.category_cache
             oid = expense['Order ID']
             current_category = expense['Category']
             current_category_expenses = category_cache[current_category]['expenses']
             target_expense = [exp for exp in current_category_expenses if exp['Order ID'] == oid][0]
-            new_category = button.text
             target_expense['Category'] = new_category
             category_cache[current_category]['expenses'] = [exp for exp in current_category_expenses if exp['Order ID'] != oid]
             category_cache[new_category]['expenses'].append(target_expense)
@@ -185,10 +221,41 @@ class Expense(ButtonBehavior, BoxLayout):
             self.parent.remove_widget(self)
             Clock.schedule_once(lambda x: CategoryExpenses.current.set_heading(), 0.5)
             
+
+        def confirm_set_category(button):
+            new_category = button.text
+            if button.text == expense['Category']:
+                return # existing category chosen
+            dialog = BDialog()
+            dialog.message = """
+                 [size=28sp]Confirm![/size]
+ 
+ 
+  
+                 Change category of:
+  
+                 [color=#b61f25]{}[/color]
+  
+                from:
+  
+                [color=#b61f25]{}[/color]
+  
+                to:
+  
+                [color=#b61f25]{}[/color]
+                """.format(
+                    self.expense['Description' if 'Description' in self.expense else 'Title'],
+                    self.expense['Category'],
+                    new_category)
+            dialog.buttons = [
+                BDButton(text='Change Category', on_press=lambda *args:[dialog.dismiss(), set_category(new_category)]),
+                BDButton(text='Cancel', on_press=dialog.dismiss)]
+            dialog.open()            
+
         chooser = CategoryChooser()
         category_list = chooser.ids['category_list']
         for category in sorted(BUDGET.keys()):
-            widget = CategoryChooserRow(text=str(category), on_press=set_category)
+            widget = CategoryChooserRow(text=str(category), on_press=confirm_set_category)
             category_list.add_widget(widget)
         chooser.ids['bar'].title.text = \
             expense['Title'] if 'Title' in expense else expense['Description']
@@ -236,10 +303,15 @@ class BudgieApp(App):
                 break
             except Exception as ex:
                 dialog = BDialog()
-                dialog.message = 'Failed to load cache:\n\n{}'.format(ex)
+                dialog.message = """
+                [size=28sp]Error: Failed to budget data.[/size]
+ 
+   
+                [color=666666]{}[/color]
+                """.format(ex)
                 dialog.buttons = [BDButton(text='Retry', on_press=lambda *args:
                                  [Clock.schedule_once(dialog.dismiss), Clock.schedule_once(self.load_cache, 0.5)]),
-                                  BDButton(text='Exit', on_press=lambda *args: sys.exit(0))]
+                                  BDButton(text='Exit', on_press=sys.exit)]
                 dialog.open()
                 return
                 
@@ -321,6 +393,7 @@ class BudgieApp(App):
                 category_cache[category] = details
         self.category_cache = category_cache
         self.exceptions_cache = exceptions_cache
+        self.dirty = False
         self.populate()
 
     def populate(self, *args):
@@ -332,50 +405,72 @@ class BudgieApp(App):
         self.root.ids['bar'].title.text = '{}'.format(
              (self.max_date + datetime.timedelta(days=self.period)).strftime('%a %b %d %Y'))
 
-
-
     def dialog(self, *args):
         dialog = Dialog()
 
     def exit_check(self, *args):
         if self.dirty:
             dialog = BDialog()
-            dialog.message = 'Budgie has unsaved changes.\n\nReally exit?'
+            dialog.message = """
+                [size=28sp]Confirm![/size]
+
+                 
+                Budgie has unsaved changes.
+ 
+ 
+                [size=28sp][color=#b61f25]Really exit?[/color][/size]"""
             dialog.buttons = [BDButton(text='Cancel', on_press=lambda *args: Clock.schedule_once(dialog.dismiss)),
                               BDButton(text='Exit', on_press=lambda *args: sys.exit(0))]
             dialog.open()
+            return True
+        return False
+
+    def menu(self):  # access to auxiliary operations
+        dialog = BDialog()
+        dialog.widgets = [Widget(),
+                          BDButton(text='Reload data from server\n{}'.format(
+                                   '(changes will be lost)' if self.dirty else ''),
+                          height=sc(50), on_press=lambda *args:
+                               [Clock.schedule_once(dialog.dismiss),Clock.schedule_once(self.load_cache)]),
+                          BDButton(text='Expense Graph', height=sc(50), on_press=lambda *args:
+                               [Clock.schedule_once(dialog.dismiss),Clock.schedule_once(GraphPanel.launch)]),
+                          BDButton(text='Income Graph', height=sc(50), on_press=lambda *args:
+                               [Clock.schedule_once(dialog.dismiss),Clock.schedule_once(GraphPanel.launch)]),
+                          Widget()
+                         ]
+        dialog.buttons = [BDButton(text='Cancel', on_press=dialog.dismiss)]
+        dialog.open()
         return True
 
-    def set_range(self, months):
-        from_date = (datetime.date.today() - datetime.timedelta(days=months * MONTH))
-        self.from_date = datetime.datetime.strftime(from_date, DATE_FORMAT)
-        self.load_cache()
-        self.populate()
 
     def write_exceptions(self):
-        error = None
+        error = ''
         if platform == 'android' or ANDROID:
-            try:
-                response = requests.put('{}/put_exceptions'.format(LAN_ADDRESS), data=json.dumps(self.exceptions_cache), timeout=1.0)
-            except Exception as ex1:
+            for address in (LAN_ADDRESS, WAN_ADDRESS):
                 try:
-                    response = requests.put('{}/put_exceptions'.format(WAN_ADDRESS), data=json.dumps(self.exceptions_cache), timeout=1.0)
-                except Exception as ex2:
-                    error = 'Ex1:\n{}\n\nEx2:\n{}'.format(ex1, ex2)
+                    requests.put('{}/put_exceptions'.format(address), data=json.dumps(self.exceptions_cache), timeout=2.0)
+                    self.dirty = False
+                    return
+                except Exception as ex:
+                    error += '{}\n'.format(ex)
         else:
             try:
                 with open(EXCEPTIONS_CACHE_PATH + '.tmp','w+') as f:
                     json.dump(self.exceptions_cache, f, indent=2)
                 os.rename(EXCEPTIONS_CACHE_PATH + '.tmp', EXCEPTIONS_CACHE_PATH)
+                self.dirty = False
+                return
             except Exceptions as ex:
                 error = '{}'.format(ex)
-                
-        if error:
-            popup = Popup(title='Failed to write exceptions because: {}'.format(error))
-            popup.add_widget(Button(text='OK'))
-            popup.open()
-        else:
-            self.dirty = False
+        dialog = BDialog()
+        dialog.message = """
+           [size=28sp]Error: Failed to upload changes:
+ 
+           [color=#666666]{}[/color]
+           """.format(error)
+        dialog.buttons = [BDButton(text='OK', on_press=dialog.dismiss),
+                          BDButton(text='Exit', on_press=sys.exit)]
+        dialog.open()
 
 
 if __name__=='__main__':

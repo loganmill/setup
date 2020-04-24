@@ -770,7 +770,7 @@ def main():
 
             def do_PUT(self):
                 log.info('do_PUT: {}'.format(self.path, self.client_address))
-                if path != '/put_exceptions':
+                if self.path != '/put_exceptions':
                     self.send_response(401)
                     log.info('do_PUT returns 404')
                     return

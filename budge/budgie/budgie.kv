@@ -1,9 +1,7 @@
-#:import AppMenu budgie.AppMenu
 #:import sc budgie.sc
 #:import GraphPanel budgie.GraphPanel
 #:import platform kivy.utils.platform
 #:set appbar_background_color (.95,.95,.93,1)
-#:set appmenu_background_color (.6,.6,.6,1)
 #:set even_row (.75,.73,.75,1)
 #:set odd_row (.87,.9,.9,1)
 #:set over_budget (.75,0,0,1)
@@ -11,9 +9,8 @@
 #:set transparent (0,0,0,0)
 #:set white (1,1,1,1)
 #:set column_width 100
-#:set category_width 220
+#:set category_width 180
 #:set span_width 60
-
 
 #
 # common superclass for all labels, buttons
@@ -37,15 +34,17 @@
     font_size: sp(20)
     background_color: appbar_background_color
 
-1#
-# notification dialog
+#
+# generalized dialog
 #
 <BDialog@ModalView>:
     background: ''
     background_color: 1,1,1,1    
     message: ''
+    widgets: []
     buttons: []
     on_message: message_label.text = self.message
+    on_widgets: for widget in self.widgets: dialog_widgets.add_widget(widget)
     on_buttons: for button in self.buttons: dialog_buttons.add_widget(button) 
     BoxLayout:
         orientation: 'vertical'
@@ -56,9 +55,17 @@
             font_size: sp(18)
             shorten: False
         BoxLayout:
+            id: dialog_widgets
+            orientation: 'vertical'
+            size_hint_y: None
+            height: 0
+            spacing: sc(20)
+            on_children: self.height = sum([child.height for child in self.children]) + sc(20) * len(self.children)
+
+        BoxLayout:
             id: dialog_buttons
             size_hint_y: None
-            height: sc(50)
+            height: sc(50) if self.children else sc(0)
             orientation: 'horizontal'
             spacing: sc(20)
             
@@ -66,34 +73,6 @@
 # AppBar layout
 #
     
-<AppMenu@DropDown>:
-    auto_width: False
-    size_hint_x: None
-    width: sc(200)
-    canvas:
-        Color:
-            rgba: appmenu_background_color
-        Rectangle:
-            pos: self.pos
-            size: self.size
-    Widget:
-        size_hint_y: None
-        height: sc(10)
-    BButton:
-        text: 'Graph'
-        size_hint_y: None
-        height: sc(44)
-        on_press: GraphPanel().open()
-        on_press: root.dismiss()
-    BButton:
-        text: 'Set Server IP'
-        size_hint_y: None
-        height: sc(44)
-        on_release: print('item2')
-    Widget:
-        size_hint_y: None
-        height: sc(10)
-        
 <AppBar@BoxLayout>:
     size_hint_y: None
     height: sc(50)
@@ -129,7 +108,7 @@
         size: sc(50,50)
         background_color: appbar_background_color
         background_normal: 'menu_android.png' if platform=='android' else 'menu.png'
-        on_release: AppMenu().open(self)
+        on_press: app.menu()
 
 #
 # Graph panel
@@ -141,6 +120,7 @@
             id: bar
             dismiss: lambda *args: root.dismiss()
         ScrollView:
+            id: scroller
             canvas.before:
                 Color:
                     rgb: white
@@ -220,6 +200,7 @@
     width: sc(column_width)
     font_size: sp(18)
     halign: 'right'
+    shorten: False
 
 <CategoryRowLabel@ColumnLabel>:
     color: over_budget if self.parent and self.parent.over_budget else black
@@ -297,10 +278,41 @@
 # Main Panel
 #
 
+<Legend@BoxLayout>
+    id: legend
+    orientation: 'horizontal'
+    size_hint_y: None
+    height:sc(50)
+    spacing: sc(10)
+    padding: sc(20,0,20,0)
+    canvas.before:
+        Color:
+            rgb: white
+        Rectangle:
+            size: self.size
+            pos: self.pos
+    Widget:
+    ColumnLabel:
+        width: sc(category_width)
+        halign: 'right'
+        text: 'Category'
+    ColumnLabel:
+        text: 'Available'
+    ColumnLabel:
+        text: 'Total'
+    ColumnLabel:
+        text: 'Limit'
+    ColumnLabel:
+        text: 'Span'
+        width: sc(span_width)
+    Widget:
+
+
 BoxLayout:
     on_parent: app.root = self
+    on_parent: self.width = 0
     orientation: 'vertical'
-    on_size: content.width = max(self.width , header.minimum_width)
+    on_size: content.width = max(self.width , legend.minimum_width)
     canvas.before:
         Color:
             rgba: white
@@ -316,35 +328,9 @@ BoxLayout:
             id: content
             orientation: 'vertical'
             size_hint_x: None
-            width: 0
-            BoxLayout:
-                id: header
-                orientation: 'horizontal'
-                size_hint_y: None
-                height:sc(50)
-                spacing: sc(10)
-                padding: sc(20,0,20,0)
-                canvas.before:
-                    Color:
-                        rgb: white
-                    Rectangle:
-                        size: self.size
-                        pos: self.pos
-                Widget:
-                ColumnLabel:
-                    width: sc(category_width)
-                    halign: 'right'
-                    text: 'Category'
-                ColumnLabel:
-                    text: 'Available'
-                ColumnLabel:
-                    text: 'Total'
-                ColumnLabel:
-                    text: 'Limit'
-                ColumnLabel:
-                    text: 'Span'
-                    width: sc(span_width)
-                Widget:
+            width: 
+            Legend:
+                id: legend
             RecycleView:
                 on_parent: app.layout = self
                 viewclass: 'CategoryRow'
@@ -360,7 +346,7 @@ BoxLayout:
                     size_hint_y: None
                     height: self.minimum_height
                     orientation: 'vertical'
-
+            Legend:
 
 
 

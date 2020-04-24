@@ -44,9 +44,9 @@ BUDGET = {
    #'Stepper':{
    #  'limit':0, 'span': 12*MONTH},
    'Unknown Amazon':{
-     'limit':0, 'span': MONTH},
+     'limit':0, 'span': YEAR},
    'Unknown Emoney':{
-     'limit':0, 'span': MONTH},
+     'limit':0, 'span': YEAR},
    'Alcohol & Bars':{
       'limit':300, 'span': THREE_MONTHS},
   'Auto Service':{
@@ -96,11 +96,11 @@ BUDGET = {
   'Insurance':{
       'limit': 270*6, 'span': SIX_MONTHS},
   'Interest Income':{
-      'limit': 0, 'span': MONTH},
+      'limit': 0, 'span': YEAR},
   'Income':{
-      'limit': 0, 'span': MONTH},
+      'limit': 0, 'span': YEAR},
   'Investment Savings':{
-      'limit': 0, 'span': MONTH},
+      'limit': 0, 'span': YEAR},
   'Kids':{
       'limit': 1400*3, 'span': THREE_MONTHS},
   #'Merchandise/Misc':{
@@ -135,8 +135,8 @@ BUDGET = {
       'limit': 72*12, 'span': YEAR},
   'Travel & Vacation':{
       'limit':300*6, 'span': SIX_MONTHS},
-  'Unclassified':{ # this could be excluded from budget totals...includes money transfer
-      'limit':0, 'span':MONTH},
+  'Unclassified':{ 
+      'limit':0, 'span':YEAR},
   'Veterinary':{
       'limit':55*6, 'span': SIX_MONTHS},
   'Water':{
@@ -146,8 +146,6 @@ BUDGET = {
       'limit':0, 'span': MONTH},
   'Credit Card Payment':{
       'limit':0, 'span': MONTH},
-  'Income':{
-      'limit':0, 'span': MONTH}
 }
   
   
