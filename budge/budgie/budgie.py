@@ -232,21 +232,21 @@ class Expense(ButtonBehavior, BoxLayout):
                 return # existing category chosen
             dialog = BDialog()
             dialog.message = """
-                 [size=28sp]Confirm![/size]
+[size=28sp]Confirm![/size]
  
  
   
-                 Change category of:
+Change category of:
   
-                 [color=#b61f25]{}[/color]
+[color=#b61f25]{}[/color]
   
-                from:
+from:
   
-                [color=#b61f25]{}[/color]
+[color=#b61f25]{}[/color]
   
-                to:
+to:
   
-                [color=#b61f25]{}[/color]
+[color=#b61f25]{}[/color]
                 """.format(
                     self.expense['Description' if 'Description' in self.expense else 'Title'],
                     self.expense['Category'],
@@ -308,10 +308,10 @@ class BudgieApp(App):
             except Exception as ex:
                 dialog = BDialog()
                 dialog.message = """
-                [size=28sp]Error: Failed to budget data.[/size]
- 
-   
-                [color=666666]{}[/color]
+[size=28sp]Error: Failed to budget data.[/size]
+  
+    
+[color=666666]{}[/color]
                 """.format(ex)
                 dialog.buttons = [BDButton(text='Retry', on_press=lambda *args:
                                  [Clock.schedule_once(dialog.dismiss), Clock.schedule_once(self.load_cache, 0.5)]),
@@ -413,13 +413,13 @@ class BudgieApp(App):
         if self.dirty:
             dialog = BDialog()
             dialog.message = """
-                [size=28sp]Confirm![/size]
+[size=28sp]Confirm![/size]
 
                  
-                Budgie has unsaved changes.
+Budgie has unsaved changes.
  
  
-                [size=28sp][color=#b61f25]Really reload?[/color][/size]"""
+[size=28sp][color=#b61f25]Really reload?[/color][/size]"""
             dialog.buttons = [BDButton(text='Cancel', on_press=dialog.dismiss),
                               BDButton(text='Reload', on_press=self.load_cache)]
 
@@ -431,13 +431,13 @@ class BudgieApp(App):
         if self.dirty:
             dialog = BDialog()
             dialog.message = """
-                [size=28sp]Confirm![/size]
+[size=28sp]Confirm![/size]
 
                  
-                Budgie has unsaved changes.
+Budgie has unsaved changes.
  
  
-                [size=28sp][color=#b61f25]Really exit?[/color][/size]"""
+[size=28sp][color=#b61f25]Really exit?[/color][/size]"""
             dialog.buttons = [BDButton(text='Cancel', on_press=dialog.dismiss),
                               BDButton(text='Exit', on_press=sys.exit())]
 
@@ -447,7 +447,7 @@ class BudgieApp(App):
 
     def menu(self,button):  # access to auxiliary operations
         dialog = BDialog(background_color=(0,0,0,0), size_hint=(None,None),
-                         pos_hint={'top': 1.0, 'right': 1.0})
+                         pos_hint={'top': 1.0, 'right': 1.0}, attach_to=button)
         button_box = BoxLayout(orientation='horizontal', size_hint_y=None, height=sp(50), spacing=sp(10))
         button_box.add_widget(Widget())
         button_box.add_widget(BButton(size_hint=(None,None),size=sc(50,50),
@@ -463,8 +463,8 @@ class BudgieApp(App):
                                [Clock.schedule_once(dialog.dismiss),Clock.schedule_once(GraphPanel.launch)]),
 
                          ]
-        content = dialog.children[0]
-        dialog.width = sum([child.width for child in content.children]) 
+        content = dialog.ids['content']
+        dialog.width = sum([child.width for child in content.children])  + content.padding[0] + content.padding[3]
         dialog.height = sum([child.height for child in content.children]) + content.spacing * len(content.children)
         dialog.open()
         dialog.message = ''

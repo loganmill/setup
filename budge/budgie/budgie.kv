@@ -45,26 +45,21 @@
     message: ''
     widgets: []
     buttons: []
-    on_message: dialog_layout.add_widget(BLabel(font_size=sp(18), halign='left', shorten=False, text=self.message), index=len(dialog_layout.children)-1)
+    on_message: content.add_widget(BLabel(font_size=sp(18), halign='center', shorten=False, text=self.message), index=len(content.children)-1)
     on_widgets: for widget in self.widgets: dialog_widgets.add_widget(widget)
     on_buttons: for button in self.buttons: dialog_buttons.add_widget(button) 
     BoxLayout:
-        id: dialog_layout
+        id: content
         orientation: 'vertical'
         padding: sc(10,10,10,10)
         spacing: sc(10)
-        #BLabel:
-        #    id: message_label
-        #    font_size: sp(18)
-        #    shorten: False
         BoxLayout:
             id: dialog_widgets
             orientation: 'vertical'
             size_hint_y: None
-            height: 0
+            height: sc(0)
             spacing: sc(20)
             on_children: self.height = sum([child.height for child in self.children]) + sc(20) * len(self.children)
-
         BoxLayout:
             id: dialog_buttons
             size_hint_y: None
