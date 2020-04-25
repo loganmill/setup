@@ -53,6 +53,10 @@ def texture_from_label(**kwargs):
     return l.texture
 
 
+class BLabel(Label):
+     pass
+
+
 class BButton(Button):
      pass
  
@@ -267,7 +271,7 @@ class BudgieApp(App):
 
     def __init__(self, *args, **kwargs):
         super(BudgieApp, self).__init__(*args, **kwargs)
-        Window.bind(on_request_close=self.exit_check)
+        Window.bind(on_request_close=self.confirm_exit)
         self.period = 1
         Clock.schedule_once(self.load_cache, 0)
         
@@ -405,10 +409,25 @@ class BudgieApp(App):
         self.root.ids['bar'].title.text = '{}'.format(
              (self.max_date + datetime.timedelta(days=self.period)).strftime('%a %b %d %Y'))
 
-    def dialog(self, *args):
-        dialog = Dialog()
+    def confirm_reload(self, *args):
+        if self.dirty:
+            dialog = BDialog()
+            dialog.message = """
+                [size=28sp]Confirm![/size]
 
-    def exit_check(self, *args):
+                 
+                Budgie has unsaved changes.
+ 
+ 
+                [size=28sp][color=#b61f25]Really reload?[/color][/size]"""
+            dialog.buttons = [BDButton(text='Cancel', on_press=dialog.dismiss),
+                              BDButton(text='Reload', on_press=self.load_cache)]
+
+            dialog.open()
+            return True
+        return False
+
+    def confirm_exit(self, *args):
         if self.dirty:
             dialog = BDialog()
             dialog.message = """
@@ -419,27 +438,36 @@ class BudgieApp(App):
  
  
                 [size=28sp][color=#b61f25]Really exit?[/color][/size]"""
-            dialog.buttons = [BDButton(text='Cancel', on_press=lambda *args: Clock.schedule_once(dialog.dismiss)),
-                              BDButton(text='Exit', on_press=lambda *args: sys.exit(0))]
+            dialog.buttons = [BDButton(text='Cancel', on_press=dialog.dismiss),
+                              BDButton(text='Exit', on_press=sys.exit())]
+
             dialog.open()
             return True
         return False
 
-    def menu(self):  # access to auxiliary operations
-        dialog = BDialog()
-        dialog.widgets = [Widget(),
-                          BDButton(text='Reload data from server\n{}'.format(
-                                   '(changes will be lost)' if self.dirty else ''),
-                          height=sc(50), on_press=lambda *args:
-                               [Clock.schedule_once(dialog.dismiss),Clock.schedule_once(self.load_cache)]),
-                          BDButton(text='Expense Graph', height=sc(50), on_press=lambda *args:
+    def menu(self,button):  # access to auxiliary operations
+        dialog = BDialog(background_color=(0,0,0,0), size_hint=(None,None),
+                         pos_hint={'top': 1.0, 'right': 1.0})
+        button_box = BoxLayout(orientation='horizontal', size_hint_y=None, height=sp(50), spacing=sp(10))
+        button_box.add_widget(Widget())
+        button_box.add_widget(BButton(size_hint=(None,None),size=sc(50,50),
+               background_normal='reload.png', background_color=(0,0,0,1), on_press=self.confirm_reload))
+        button_box.add_widget(BButton(size_hint=(None,None),size=sc(50,50),
+               background_normal='close.png', background_color=(0,0,0,1), on_press=self.confirm_exit))
+        dialog.widgets =  [button_box,
+                           BDButton(text='Expense Graph', height=sc(50), on_press=lambda *args:
                                [Clock.schedule_once(dialog.dismiss),Clock.schedule_once(GraphPanel.launch)]),
-                          BDButton(text='Income Graph', height=sc(50), on_press=lambda *args:
+                           BDButton(text='Expense Graph', height=sc(50), on_press=lambda *args:
                                [Clock.schedule_once(dialog.dismiss),Clock.schedule_once(GraphPanel.launch)]),
-                          Widget()
+                           BDButton(text='Expense Graph', height=sc(50), on_press=lambda *args:
+                               [Clock.schedule_once(dialog.dismiss),Clock.schedule_once(GraphPanel.launch)]),
+
                          ]
-        dialog.buttons = [BDButton(text='Cancel', on_press=dialog.dismiss)]
+        content = dialog.children[0]
+        dialog.width = sum([child.width for child in content.children]) 
+        dialog.height = sum([child.height for child in content.children]) + content.spacing * len(content.children)
         dialog.open()
+        dialog.message = ''
         return True
 
 

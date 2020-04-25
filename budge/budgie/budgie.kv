@@ -1,5 +1,6 @@
 #:import sc budgie.sc
 #:import GraphPanel budgie.GraphPanel
+#:import BLabel budgie.BLabel
 #:import platform kivy.utils.platform
 #:set appbar_background_color (.95,.95,.93,1)
 #:set even_row (.75,.73,.75,1)
@@ -38,22 +39,24 @@
 # generalized dialog
 #
 <BDialog@ModalView>:
-    background: ''
-    background_color: 1,1,1,1    
+    background: 'white_button.png'
+    background_color: 1,1,1,0
+    size_hint: (.85,.85)
     message: ''
     widgets: []
     buttons: []
-    on_message: message_label.text = self.message
+    on_message: dialog_layout.add_widget(BLabel(font_size=sp(18), halign='left', shorten=False, text=self.message), index=len(dialog_layout.children)-1)
     on_widgets: for widget in self.widgets: dialog_widgets.add_widget(widget)
     on_buttons: for button in self.buttons: dialog_buttons.add_widget(button) 
     BoxLayout:
+        id: dialog_layout
         orientation: 'vertical'
-        padding: sc(20,20,20,20)
-        spacing: sc(20)
-        BLabel:
-            id: message_label
-            font_size: sp(18)
-            shorten: False
+        padding: sc(10,10,10,10)
+        spacing: sc(10)
+        #BLabel:
+        #    id: message_label
+        #    font_size: sp(18)
+        #    shorten: False
         BoxLayout:
             id: dialog_widgets
             orientation: 'vertical'
@@ -108,7 +111,7 @@
         size: sc(50,50)
         background_color: appbar_background_color
         background_normal: 'menu_android.png' if platform=='android' else 'menu.png'
-        on_press: app.menu()
+        on_press: app.menu(self)
 
 #
 # Graph panel
