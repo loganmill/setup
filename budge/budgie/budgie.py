@@ -74,7 +74,8 @@ class GraphPanel(ModalView):
         
     def on_open(self, *args):
         surface = self.ids['surface']
-        date = datetime.date.today() - datetime.timedelta(days=365)
+        today = datetime.date.today()
+        date = today - datetime.timedelta(days=365)
         sums = []
         app = App.get_running_app()
         date_cache = app.date_cache
@@ -84,6 +85,15 @@ class GraphPanel(ModalView):
                   for expense in date_cache.get(date, {})
                       if expense['Category'] not in NON_EXPENSES])
             date += datetime.timedelta(days=1)
+        date = today - datetime.timedelta(days=365 - 32)
+        base = sum([total for seed_date,total in totals.items() if seed_date <= date])
+        avg = {}
+        while date < today:
+            avg[date] = base / 32.0
+            base -= totals[date - datetime.timedelta(days=32)]
+            base += totals[date]
+            date += datetime.timedelta(days=1)
+        totals = avg
         max_expense = max(totals.values())
         min_expense = min(totals.values())
         if min_expense < 0:
@@ -271,7 +281,7 @@ class BudgieApp(App):
 
     def __init__(self, *args, **kwargs):
         super(BudgieApp, self).__init__(*args, **kwargs)
-        Window.bind(on_request_close=self.confirm_exit)
+        Window.bind(on_request_close=self.confirm_close)
         self.period = 1
         Clock.schedule_once(self.load_cache, 0)
         
@@ -427,7 +437,7 @@ Budgie has unsaved changes.
             return True
         return False
 
-    def confirm_exit(self, *args):
+    def confirm_close(self, *args):
         if self.dirty:
             dialog = BDialog()
             dialog.message = """
@@ -443,31 +453,32 @@ Budgie has unsaved changes.
 
             dialog.open()
             return True
-        return False
+        sys.exit()
 
     def menu(self,button):  # access to auxiliary operations
         dialog = BDialog(background_color=(0,0,0,0), size_hint=(None,None),
-                         pos_hint={'top': 1.0, 'right': 1.0}, attach_to=button)
-        button_box = BoxLayout(orientation='horizontal', size_hint_y=None, height=sp(50), spacing=sp(10))
+                       pos_hint={'top': 1.0, 'right': 1.0})
+        button_box = BoxLayout(orientation='horizontal', size_hint_y=None, height=sc(50), spacing=sc(10))
         button_box.add_widget(Widget())
         button_box.add_widget(BButton(size_hint=(None,None),size=sc(50,50),
-               background_normal='reload.png', background_color=(0,0,0,1), on_press=self.confirm_reload))
+               background_normal='reload_android.png' if platform=='android' else 'reload.png',
+               background_color=(0,0,0,1), on_press=self.confirm_reload))
         button_box.add_widget(BButton(size_hint=(None,None),size=sc(50,50),
-               background_normal='close.png', background_color=(0,0,0,1), on_press=self.confirm_exit))
+               background_normal='close_android.png' if platform=='android' else 'close.png',
+               background_color=(0,0,0,1), on_press=self.confirm_close))
         dialog.widgets =  [button_box,
                            BDButton(text='Expense Graph', height=sc(50), on_press=lambda *args:
                                [Clock.schedule_once(dialog.dismiss),Clock.schedule_once(GraphPanel.launch)]),
                            BDButton(text='Expense Graph', height=sc(50), on_press=lambda *args:
                                [Clock.schedule_once(dialog.dismiss),Clock.schedule_once(GraphPanel.launch)]),
                            BDButton(text='Expense Graph', height=sc(50), on_press=lambda *args:
-                               [Clock.schedule_once(dialog.dismiss),Clock.schedule_once(GraphPanel.launch)]),
-
-                         ]
+                               [Clock.schedule_once(dialog.dismiss),Clock.schedule_once(GraphPanel.launch)])
+                          ]
         content = dialog.ids['content']
-        dialog.width = sum([child.width for child in content.children])  + content.padding[0] + content.padding[3]
+        dialog.width = sc(250)
         dialog.height = sum([child.height for child in content.children]) + content.spacing * len(content.children)
         dialog.open()
-        dialog.message = ''
+
         return True
 
 
