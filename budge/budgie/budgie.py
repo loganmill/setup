@@ -5,8 +5,10 @@ from kivy.graphics import *
 from kivy.uix.widget import Widget
 from kivy.uix.button import Button
 from kivy.uix.dropdown import DropDown
+from kivy.uix.textinput import TextInput
 from kivy.uix.togglebutton import ToggleButton
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
 from kivy.uix.modalview import ModalView
 from kivy.uix.popup import Popup
@@ -23,7 +25,6 @@ import pdb
 import requests
 from re import sub
 import time
-
 ANDROID = True  # for desktop testing of android
 
 LAN_ADDRESS = 'http://10.0.0.129:5000'
@@ -56,15 +57,57 @@ def texture_from_label(**kwargs):
 class BLabel(Label):
      pass
 
-
 class BButton(Button):
-     pass
+    pass
  
 class BDButton(BButton):
-     pass
+    pass
 
 class BDialog(ModalView):
     pass
+
+class PinPad(BDialog):
+    
+    @classmethod
+    def launch(*args):
+        PinPad().open()
+
+    def on_open(self, *args):
+        self.size_hint_x = .618
+        pin = TextInput(password=True, size_hint_y=None, height=sp(50),
+                        font_size=sp(50), halign='center', background_normal='')
+  
+        def on_pad_pressed(pad):
+            if pad.text == 'clr':
+                pin.text = ''
+            elif pad.text == '<-':
+                pin.text = pin.text[:-1] if pin.text else pin.text
+            else:
+                 pin.text += pad.text
+                 
+        button_layout = BoxLayout(orientation='horizontal')
+        grid_layout = GridLayout(cols=3, size_hint_x=None, width=sc(120) * 3)
+        for pad_text in [1,2,3,4,5,6,7,8,9,'clr',0,'<-']:
+            grid_layout.add_widget(BButton(
+                              text=str(pad_text),
+                              size_hint=(None,None),
+                              size=sc(120,80),
+                              font_size=sp(50),
+                              on_press=on_pad_pressed))
+        button_layout.add_widget(Widget())
+        button_layout.add_widget(grid_layout)
+        button_layout.add_widget(Widget())                                  
+        self.widgets = [BLabel(text='Enter PIN', size_hint_y=None, height=50, font_size=sp(30)),
+                        pin,
+                        button_layout
+                        ]
+        self.buttons = [BDButton(text='Enter', on_press=self.dismiss)]
+        self.content.add_widget(Widget(), index=1)
+        self._pin = pin
+
+    def pin(self):
+        return self._pin.text
+
 
 class GraphPanel(ModalView):
 
@@ -135,7 +178,6 @@ class GraphPanel(ModalView):
             Rectangle(size=sc(100,24),
                 pos=(x, budget_height-sc(12)),
                 texture=texture_from_label(text='${:.2f}'.format(budget_goal)))
-
 
 class CategoryExpenses(ModalView):
 
@@ -467,12 +509,10 @@ Budgie has unsaved changes.
                background_normal='close_android.png' if platform=='android' else 'close.png',
                background_color=(0,0,0,1), on_press=self.confirm_close))
         dialog.widgets =  [button_box,
-                           BDButton(text='Expense Graph', height=sc(50), on_press=lambda *args:
+                           BDButton(text='Pin', height=sc(35), on_press=lambda *args:
+                               [Clock.schedule_once(dialog.dismiss),Clock.schedule_once(PinPad.launch)]),
+                           BDButton(text='Expense Graph', height=sc(35), on_press=lambda *args:
                                [Clock.schedule_once(dialog.dismiss),Clock.schedule_once(GraphPanel.launch)]),
-                           BDButton(text='Expense Graph', height=sc(50), on_press=lambda *args:
-                               [Clock.schedule_once(dialog.dismiss),Clock.schedule_once(GraphPanel.launch)]),
-                           BDButton(text='Expense Graph', height=sc(50), on_press=lambda *args:
-                               [Clock.schedule_once(dialog.dismiss),Clock.schedule_once(GraphPanel.launch)])
                           ]
         content = dialog.ids['content']
         dialog.width = sc(250)

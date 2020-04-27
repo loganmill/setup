@@ -1,3 +1,4 @@
+# -*-Python-*-
 #:import sc budgie.sc
 #:import GraphPanel budgie.GraphPanel
 #:import BLabel budgie.BLabel
@@ -33,15 +34,19 @@
 
 <BDButton@BButton>: # budgie dialog button
     font_size: sp(20)
+    background_normal: 'gray_button.png'
     background_color: appbar_background_color
+
 
 #
 # generalized dialog
 #
 <BDialog@ModalView>:
-    background: 'white_button.png'
+    background: 'white_shadow.png'
+    border: 30,30,30,30
     background_color: 1,1,1,0
     size_hint: (.85,.85)
+    content: self.ids['content']
     message: ''
     widgets: []
     buttons: []
@@ -51,15 +56,16 @@
     BoxLayout:
         id: content
         orientation: 'vertical'
-        padding: sc(10,10,10,10)
+        padding: sc(0,0,16,16)
         spacing: sc(10)
         BoxLayout:
             id: dialog_widgets
             orientation: 'vertical'
             size_hint_y: None
             height: sc(0)
-            spacing: sc(20)
+            spacing: sc(5)
             on_children: self.height = sum([child.height for child in self.children]) + sc(20) * len(self.children)
+        # Widget:
         BoxLayout:
             id: dialog_buttons
             size_hint_y: None
