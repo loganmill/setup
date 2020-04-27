@@ -68,12 +68,9 @@ class BDialog(ModalView):
 
 class PinPad(BDialog):
     
-    @classmethod
-    def launch(*args):
-        PinPad().open()
-
     def on_open(self, *args):
-        self.size_hint_x = .618
+        app = App.get_running_app()
+        self.size_hint = (1,1)
         pin = TextInput(password=True, size_hint_y=None, height=sp(50),
                         font_size=sp(50), halign='center', background_normal='')
   
@@ -84,6 +81,7 @@ class PinPad(BDialog):
                 pin.text = pin.text[:-1] if pin.text else pin.text
             else:
                  pin.text += pad.text
+            app.pin = pin.text
                  
         button_layout = BoxLayout(orientation='horizontal')
         grid_layout = GridLayout(cols=3, size_hint_x=None, width=sc(120) * 3)
@@ -102,11 +100,7 @@ class PinPad(BDialog):
                         button_layout
                         ]
         self.buttons = [BDButton(text='Enter', on_press=self.dismiss)]
-        self.content.add_widget(Widget(), index=1)
-        self._pin = pin
-
-    def pin(self):
-        return self._pin.text
+        self.ids['content'].add_widget(Widget(), index=1)
 
 
 class GraphPanel(ModalView):
@@ -325,7 +319,14 @@ class BudgieApp(App):
         super(BudgieApp, self).__init__(*args, **kwargs)
         Window.bind(on_request_close=self.confirm_close)
         self.period = 1
-        Clock.schedule_once(self.load_cache, 0)
+        self.pin = ''
+
+        def launch(*args):
+            pin_pad = PinPad()
+            pin_pad.on_dismiss=self.load_cache
+            pin_pad.open()
+
+        Clock.schedule_once(launch)
         
     def get_cache(self, path):
         if platform == 'android' or ANDROID:
@@ -351,6 +352,7 @@ class BudgieApp(App):
                 return json.load(f)
 
     def load_cache(self, *args):
+        print(self.pin) # rem grd
         while True:
             try:
                 amazon_cache = self.get_cache('amazon')
