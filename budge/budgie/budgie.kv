@@ -34,28 +34,53 @@
 
 <BDButton@BButton>: # budgie dialog button
     font_size: sp(20)
-    background_normal: 'gray_button.png'
-    background_color: appbar_background_color
-
+    background_normal: ''
+    offset: 2
+    canvas.before:
+        Color:
+            rgba: .0,.0,.0,.5
+        RoundedRectangle:
+            pos: self.x + self.offset, self.y - self.offset
+            size: self.size
+        Color:
+            rgba: appbar_background_color
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
 
 #
 # generalized dialog
 #
-<BDialog@ModalView>:
-    background: 'white_shadow.png'
-    border: 30,30,30,30
-    background_color: 1,1,1,0
+<-BDialog@ModalView>:
+    offset: sc(3)
     size_hint: (.85,.85)
+    overlay_color: 0,0,0,.5
     message: ''
     widgets: []
     buttons: []
     on_message: content.add_widget(BLabel(font_size=sp(18), halign='center', shorten=False, text=self.message), index=len(content.children)-1)
     on_widgets: for widget in self.widgets: dialog_widgets.add_widget(widget)
-    on_buttons: for button in self.buttons: dialog_buttons.add_widget(button) 
+    on_buttons: for button in self.buttons: dialog_buttons.add_widget(button)
+    canvas.before:
+        Color:
+            rgba: root.overlay_color[:3] + [root.overlay_color[-1] * self._anim_alpha]
+        Rectangle:
+            size: self._window.size if self._window else (0, 0)
+        Color:
+            rgba: .0,.0,.0,.5
+        RoundedRectangle:
+            pos: self.x + self.offset, self.y - self.offset
+            size: self.size
+        Color:
+            rgba: white
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+
     BoxLayout:
         id: content
         orientation: 'vertical'
-        padding: sc(0,0,16,16)
+        padding: sc(10,10,10,10)
         spacing: sc(10)
         BoxLayout:
             id: dialog_widgets

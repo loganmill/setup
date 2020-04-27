@@ -64,13 +64,12 @@ class BDButton(BButton):
     pass
 
 class BDialog(ModalView):
-    pass
+    offset = NumericProperty()
 
 class PinPad(BDialog):
     
     def on_open(self, *args):
         app = App.get_running_app()
-        self.size_hint = (1,1)
         pin = TextInput(password=True, size_hint_y=None, height=sp(50),
                         font_size=sp(50), halign='center', background_normal='')
   
@@ -101,6 +100,7 @@ class PinPad(BDialog):
                         ]
         self.buttons = [BDButton(text='Enter', on_press=self.dismiss)]
         self.ids['content'].add_widget(Widget(), index=1)
+        #self.size_hint = [.618,.95]
 
 
 class GraphPanel(ModalView):
