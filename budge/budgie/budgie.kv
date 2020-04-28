@@ -40,21 +40,24 @@
         Color:
             rgba: .0,.0,.0,.5
         RoundedRectangle:
+            radius: [sc(15)]
             pos: self.x + self.offset, self.y - self.offset
             size: self.size
+            segments: 30
         Color:
             rgba: appbar_background_color
         RoundedRectangle:
+            radius: [sc(15)]
             pos: self.pos
             size: self.size
-
+            segments: 30
 #
 # generalized dialog
 #
 <-BDialog@ModalView>:
     offset: sc(3)
     size_hint: (.85,.85)
-    overlay_color: 0,0,0,.5
+    overlay_color: 0,0,0,.2
     message: ''
     widgets: []
     buttons: []
@@ -70,13 +73,16 @@
             rgba: .0,.0,.0,.5
         RoundedRectangle:
             pos: self.x + self.offset, self.y - self.offset
+            radius: [sc(15)]
             size: self.size
+            segments: 30
         Color:
             rgba: white
         RoundedRectangle:
+            radius: [sc(15)]
             pos: self.pos
             size: self.size
-
+            segments: 30
     BoxLayout:
         id: content
         orientation: 'vertical'
@@ -88,8 +94,9 @@
             size_hint_y: None
             height: sc(0)
             spacing: sc(5)
-            on_children: self.height = sum([child.height for child in self.children]) + sc(20) * len(self.children)
-        # Widget:
+            on_children: self.height = sum([child.height for child in self.children]) + self.spacing * len(self.children)
+        Widget:
+            height: 0
         BoxLayout:
             id: dialog_buttons
             size_hint_y: None

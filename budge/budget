@@ -4,7 +4,9 @@ from apiclient import errors
 import argparse
 from budget_defs import *
 from collections import namedtuple
+from cryptography.fernet import Fernet
 import csv
+import base64
 import datetime
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -180,11 +182,11 @@ class AwaitPage(object):
 
 class Budget(object):
 
-    def __init__(self, end_date=None, uncache=21, period=1):
+    def __init__(self, end_date=None, uncache=21, cycle=1):
         self.scrape_delay = 3  # extra delay used when screen-scraping
         self.end_date = end_date if end_date else datetime.date.today() - datetime.timedelta(days=1)
         self.uncache = uncache       
-        self.period = period
+        self.cycle = cycle
         self.emoney_cache = self.amazon_cache = None
         self.budget_notes = ''       
         super(Budget, self).__init__()
@@ -223,8 +225,8 @@ class Budget(object):
                 time.sleep(60 * 3)
         
     def _get_spending_by_category(self):
-        log.info('Computing spending to: {} uncache: {}, period: {}'.format(
-            self.end_date, self.uncache, self.period))
+        log.info('Computing spending to: {} uncache: {}, cycle: {}'.format(
+            self.end_date, self.uncache, self.cycle))
         total_budget = 0
         emoney_cache = self.load_emoney_cache()
         amazon_cache = self.load_amazon_cache()
@@ -232,7 +234,7 @@ class Budget(object):
             total_budget += (item['limit'] / float(item['span'])) * YEAR
         self.budget_notes += 'Total annual budget: {}\n'.format(total_budget)
         spending_by_category = {}
-        period = self.period
+        cycle = self.cycle
         end_date = self.end_date
         try:
             with open(EXCEPTIONS_CACHE_PATH) as f:
@@ -253,7 +255,7 @@ class Budget(object):
                     log.warn(msg)
                     self.budget_notes += msg
                     category = 'Unknown Emoney'
-                if date >= end_date - datetime.timedelta(days=BUDGET[category]['span'] + period):
+                if date >= end_date - datetime.timedelta(days=BUDGET[category]['span'] + cycle):
                     amount = expense['Amount']
                     if category == 'Kids':
                         if 'DERR' in description and amount > 120:
@@ -275,7 +277,7 @@ class Budget(object):
                     log.warn(msg)
                     self.budget_notes + msg
                     category = 'Unknown Amazon'
-                if date >= end_date - datetime.timedelta(days=BUDGET[category]['span'] + period):
+                if date >= end_date - datetime.timedelta(days=BUDGET[category]['span'] + cycle):
                     amount = expense['Item Total']
                     spending_by_category[category] = spending_by_category.get(category, 0.0) + amount
         return spending_by_category
@@ -727,13 +729,15 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-a', '--at', type=str)
     parser.add_argument('-b', '--backup', action='store_true')
-    parser.add_argument('-p', '--period', type=int, default=1)
-    parser.add_argument('-u', '--uncache', type=int, default=21)
+    parser.add_argument('-c', '--cycle', type=int, default=1)
     parser.add_argument('-e', '--end_date', help='format: "yy-mm-dd", defaults to yesterday, ignored if -a or -ma specified', type=str)
-    parser.add_argument('-ma','--merge_amazon_csv',nargs=2,type=str)
+    parser.add_argument('-m','--merge_amazon_csv',nargs=2,type=str)
+    parser.add_argument('-p','--pin',nargs=1,type=int, default=8529)
     parser.add_argument('-s','--server',nargs=1,type=int, default=0)
-    args = parser.parse_args()
+    parser.add_argument('-u', '--uncache', type=int, default=21)
 
+    args = parser.parse_args()
+    print(args.pin)
     if args.merge_amazon_csv:
         budget = Budget()
         file_path, username = args.merge_amazon_csv
@@ -744,11 +748,30 @@ def main():
     if args.server:
         import threading
         from http.server import BaseHTTPRequestHandler, HTTPServer
-        port = 5000
+        port = args.server[0]
+
         class HttpBudgetRequestHandler(BaseHTTPRequestHandler):
+
+            def is_authorized(self):
+                try:
+                    pin = str(args.pin[0])
+                    pin32 = f'{len(pin):02}' + f'{int(pin):030}'
+                    key = base64.b64encode(pin32.encode('ascii'))
+                    auth_token = self.headers['Authorization'].encode('utf-8')
+                    timestamp = float(Fernet(key).decrypt(auth_token))
+                    if abs(time.time() - timestamp) > 30.0:
+                        raise Exception()
+                except Exception as ex:
+                    print(ex)
+                    self.send_response(418) # Hyper Text Coffee Pot Control Protocol
+                    self.end_headers()
+                    return False
+                return True
 
             def do_GET(self):
                 log.info('do_GET: {} {}'.format(self.path, self.client_address))
+                if not self.is_authorized():
+                    return
                 full_path = {'/amazon':AMAZON_CACHE_PATH,
                             '/emoney':EMONEY_CACHE_PATH,
                             '/exceptions':EXCEPTIONS_CACHE_PATH}.get(self.path, None)
@@ -797,7 +820,7 @@ def main():
         threading.Thread(target=serve).start()        
         
 
-    if args.at: # run continuosly at given time every 'period' days:
+    if args.at: # run continuosly at given time every 'cycle' days:
 
         def current_time_seconds():
             now = datetime.datetime.now() 
@@ -811,7 +834,7 @@ def main():
         time.sleep(initial_sleep)
         while True:
             time.sleep(max(at_seconds - current_time_seconds(), 0)) # sleep iff here to soon due to time inaccuracy
-            budget = Budget(uncache=args.uncache, end_date=None, period=args.period)
+            budget = Budget(uncache=args.uncache, end_date=None, cycle=args.cycle)
             spending = budget.get_spending_by_category()
             if spending:
                 log.info(budget.format_spending(spending))
@@ -819,11 +842,11 @@ def main():
                     f.write(budget.format_html_spending(spending))
                 if args.backup:
                     budget.backup()
-            log.info('Begin sleep of: {}'.format(args.period * seconds_per_day))
-            time.sleep(args.period * seconds_per_day)
+            log.info('Begin sleep of: {}'.format(args.cycle * seconds_per_day))
+            time.sleep(args.cycle * seconds_per_day)
     else:
         end_date = datetime.datetime.strptime(args.end_date, config.DATE_FORMAT) if args.end_date else None
-        budget = Budget(uncache=args.uncache, end_date=None, period=args.period)
+        budget = Budget(uncache=args.uncache, end_date=None, cycle=args.cycle)
         spending = budget.get_spending_by_category()
         if spending:
             log.info(budget.format_spending(spending))

@@ -18,8 +18,10 @@ from kivy.properties import *
 from kivy.utils import platform
 from kivy.clock import Clock
 from kivy.metrics import dp, sp
+import base64
 from budget_defs import *
 import copy
+from cryptography.fernet import Fernet
 import json
 import pdb
 import requests
@@ -70,8 +72,9 @@ class PinPad(BDialog):
     
     def on_open(self, *args):
         app = App.get_running_app()
-        pin = TextInput(password=True, size_hint_y=None, height=sp(50),
-                        font_size=sp(50), halign='center', background_normal='')
+        self.overlay_color = (.95,.95,.93,1)
+        pin = TextInput(password=True, size_hint_y=None, height=sp(30),
+                        font_size=sp(25), halign='center', background_normal='')
   
         def on_pad_pressed(pad):
             if pad.text == 'clr':
@@ -83,13 +86,13 @@ class PinPad(BDialog):
             app.pin = pin.text
                  
         button_layout = BoxLayout(orientation='horizontal')
-        grid_layout = GridLayout(cols=3, size_hint_x=None, width=sc(120) * 3)
+        grid_layout = GridLayout(cols=3, size_hint_x=None, width=sc(75) * 3)
         for pad_text in [1,2,3,4,5,6,7,8,9,'clr',0,'<-']:
             grid_layout.add_widget(BButton(
                               text=str(pad_text),
                               size_hint=(None,None),
-                              size=sc(120,80),
-                              font_size=sp(50),
+                              size=sc(75,50),
+                              font_size=sp(40),
                               on_press=on_pad_pressed))
         button_layout.add_widget(Widget())
         button_layout.add_widget(grid_layout)
@@ -99,8 +102,6 @@ class PinPad(BDialog):
                         button_layout
                         ]
         self.buttons = [BDButton(text='Enter', on_press=self.dismiss)]
-        self.ids['content'].add_widget(Widget(), index=1)
-        #self.size_hint = [.618,.95]
 
 
 class GraphPanel(ModalView):
@@ -321,12 +322,7 @@ class BudgieApp(App):
         self.period = 1
         self.pin = ''
 
-        def launch(*args):
-            pin_pad = PinPad()
-            pin_pad.on_dismiss=self.load_cache
-            pin_pad.open()
-
-        Clock.schedule_once(launch)
+        Clock.schedule_once(self.load_cache)
         
     def get_cache(self, path):
         if platform == 'android' or ANDROID:
@@ -338,7 +334,12 @@ class BudgieApp(App):
                            }.get(path, None)
                if path:
                   try: 
-                      response = requests.get(full_path, timeout=3.0)
+                      pin = f'{len(self.pin):02}' + f'{int(self.pin):030}'
+                      key = base64.b64encode(pin.encode('ascii'))
+                      token = Fernet(key).encrypt(f'{time.time():.04f}'.encode('ascii'))
+                      response = requests.get(full_path, headers={'Authorization':token},timeout=3.0)
+                      if response.status_code != 200:
+                          raise Exception('Invalid PIN!\n\n')
                       return json.loads(response.text)
                   except Exception as ex:
                       err += '{}\n'.format(ex)
@@ -352,7 +353,18 @@ class BudgieApp(App):
                 return json.load(f)
 
     def load_cache(self, *args):
-        print(self.pin) # rem grd
+
+        def launch(*args):
+            pin_pad = PinPad()
+            pin_pad.on_dismiss=self._load_cache
+            pin_pad.open()
+
+        Clock.schedule_once(launch)
+
+
+    def _load_cache(self, *args):
+
+
         while True:
             try:
                 amazon_cache = self.get_cache('amazon')
@@ -362,7 +374,7 @@ class BudgieApp(App):
             except Exception as ex:
                 dialog = BDialog()
                 dialog.message = """
-[size=28sp]Error: Failed to budget data.[/size]
+[size=28sp]Error: Failed to load budget data.[/size]
   
     
 [color=666666]{}[/color]
@@ -475,11 +487,12 @@ Budgie has unsaved changes.
  
 [size=28sp][color=#b61f25]Really reload?[/color][/size]"""
             dialog.buttons = [BDButton(text='Cancel', on_press=dialog.dismiss),
-                              BDButton(text='Reload', on_press=self.load_cache)]
+                              BDButton(text='Reload', on_press=lambda *args:
+                                       [dialog.dismiss(),self.load_cache()])]
 
             dialog.open()
             return True
-        return False
+        self.load_cache()
 
     def confirm_close(self, *args):
         if self.dirty:
@@ -506,7 +519,8 @@ Budgie has unsaved changes.
         button_box.add_widget(Widget())
         button_box.add_widget(BButton(size_hint=(None,None),size=sc(50,50),
                background_normal='reload_android.png' if platform=='android' else 'reload.png',
-               background_color=(0,0,0,1), on_press=self.confirm_reload))
+               background_color=(0,0,0,1),
+               on_press=lambda *args:[dialog.dismiss(), self.confirm_reload()]))
         button_box.add_widget(BButton(size_hint=(None,None),size=sc(50,50),
                background_normal='close_android.png' if platform=='android' else 'close.png',
                background_color=(0,0,0,1), on_press=self.confirm_close))
@@ -518,10 +532,8 @@ Budgie has unsaved changes.
                           ]
         content = dialog.ids['content']
         dialog.width = sc(250)
-        dialog.height = sum([child.height for child in content.children]) + content.spacing * len(content.children)
+        dialog.height = sum([child.height for child in content.children]) + (content.spacing * len(content.children))
         dialog.open()
-
-        return True
 
 
     def write_exceptions(self):
