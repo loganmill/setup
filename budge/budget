@@ -23,6 +23,7 @@ from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.select import Select
 from selenium.common.exceptions import NoSuchElementException
+import ssl
 import sys
 import time
 import traceback
@@ -762,7 +763,7 @@ def main():
                     if abs(time.time() - timestamp) > 30.0:
                         raise Exception()
                 except Exception as ex:
-                    print(ex)
+                    log.warn(ex)
                     self.send_response(418) # Hyper Text Coffee Pot Control Protocol
                     self.end_headers()
                     return False
@@ -779,9 +780,9 @@ def main():
                     with open(full_path) as f:
                         data = f.read().encode('ascii')
                 else:
+                    log.info('do_GET returns 401')
                     self.send_response(401)
                     self.end_headers()
-                    log.info('do_GET returns 404')
                     return
                 self.send_response(200)
                 self.send_header('Content-type', 'text/plain')
@@ -813,8 +814,13 @@ def main():
                 self.end_headers()
                       
         def serve(*args):
-            print('serving at: {}'.format(port))
             server = HTTPServer(('', port), HttpBudgetRequestHandler)            
+            certfile = os.path.abspath('import.pem')
+            server.socket = ssl.wrap_socket(
+                server.socket,
+                server_side=True,
+                certfile=certfile)
+            log.info('serving at: {}'.format(port))
             server.serve_forever()
 
         threading.Thread(target=serve).start()        

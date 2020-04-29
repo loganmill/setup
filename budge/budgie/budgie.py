@@ -25,12 +25,17 @@ from cryptography.fernet import Fernet
 import json
 import pdb
 import requests
+from requests.packages.urllib3.exceptions import InsecureRequestWarning
 from re import sub
 import time
+
+requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+
+
 ANDROID = True  # for desktop testing of android
 
-LAN_ADDRESS = 'http://10.0.0.129:5000'
-WAN_ADDRESS = 'http://loganmill.net:5000'
+LAN_ADDRESS = 'https://10.0.0.129:5000'
+WAN_ADDRESS = 'https://loganmill.net:5000'
 
 # Only the following keys will be extracted from corresponding cache:
 AMAZON_EXPENSE_KEYS = ['Date', 'Cost', 'Title', 'Category', 'Shipping Address City','Buyer Name',  'Source', 'Order ID']
@@ -337,7 +342,7 @@ class BudgieApp(App):
                       pin = f'{len(self.pin):02}' + f'{int(self.pin):030}'
                       key = base64.b64encode(pin.encode('ascii'))
                       token = Fernet(key).encrypt(f'{time.time():.04f}'.encode('ascii'))
-                      response = requests.get(full_path, headers={'Authorization':token},timeout=3.0)
+                      response = requests.get(full_path, headers={'Authorization':token},timeout=3.0,verify=False)
                       if response.status_code != 200:
                           raise Exception('Invalid PIN!\n\n')
                       return json.loads(response.text)

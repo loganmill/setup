@@ -24,10 +24,10 @@ if 'build' in sys.argv:
 
 
 if 'clean' in sys.argv:
-    print(subprocess.check_output('docker run --rm --privileged  -v $PWD:/buildozer kivy/buildozer buildozer android clean', shell=True))
+    print(subprocess.check_output('docker run --rm -v $HOME/.buildozer:/home/user/.buildozer -v $PWD:/home/user/hostcwd kivy/buildozer android clean', shell=True))
+
 
 if 'apk' in sys.argv:
-    # res = subprocess.check_output('sudo docker run --privileged -v $PWD:/buildozer tshirtman/buildozer buildozer android debug', shell=True)
     print(subprocess.check_output('docker run --rm -v $HOME/.buildozer:/home/user/.buildozer -v $PWD:/home/user/hostcwd kivy/buildozer android debug', shell=True))
 
 
